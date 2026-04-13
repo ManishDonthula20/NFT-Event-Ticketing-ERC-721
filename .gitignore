@@ -1,0 +1,24 @@
+# Node dependencies
+node_modules/
+
+# Hardhat compilation outputs
+artifacts/
+cache/
+typechain/
+typechain-types/
+types/
+compile-cache.json
+build-info/
+test-artifacts/
+
+# Environment variables
+.env
+
+# Coverage reports
+coverage/
+coverage.json
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
