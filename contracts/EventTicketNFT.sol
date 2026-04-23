@@ -87,7 +87,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     mapping(uint256 => uint256) private _activeListingIndex; // tokenId → idx+1 (0 = not present)
 
     // ---------------------------------------------------------------------
-    // Events
+    // Events 
     // ---------------------------------------------------------------------
 
     event EventCreated(
