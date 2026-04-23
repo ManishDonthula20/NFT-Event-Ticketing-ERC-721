@@ -1,39 +1,41 @@
 {
-  "name": "nft-event-ticketing-erc-721",
+  "name": "NFT-Event-Ticketing-ERC-721",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ManishDonthula20/NFT-Event-Ticketing-ERC-721.git"
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
+    "node": "hardhat node"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/ManishDonthula20/NFT-Event-Ticketing-ERC-721/issues"
-  },
-  "homepage": "https://github.com/ManishDonthula20/NFT-Event-Ticketing-ERC-721#readme",
-  "devDependencies": {
-    "@nomicfoundation/hardhat-ethers": "^4.0.7",
-    "@nomicfoundation/hardhat-ignition": "^3.1.1",
-    "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.3",
-    "@types/chai": "^5.2.3",
-    "@types/chai-as-promised": "^8.0.2",
-    "@types/mocha": "^10.0.10",
-    "@types/node": "^22.19.17",
-    "chai": "^6.2.2",
-    "ethers": "^6.16.0",
-    "forge-std": "github:foundry-rs/forge-std#v1.9.4",
-    "hardhat": "^3.3.0",
-    "mocha": "^11.7.5",
-    "typescript": "~5.8.0"
-  },
-  "type": "module",
   "dependencies": {
-    "@openzeppelin/contracts": "^5.6.1"
+    "@openzeppelin/contracts": "^5.6.1",
+    "@openzeppelin/contracts-upgradeable": "^5.6.1",
+    "@openzeppelin/hardhat-upgrades": "^3.9.1",
+    "dotenv": "^17.4.2"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.1.2",
+    "@nomicfoundation/hardhat-ethers": "^3.1.3",
+    "@nomicfoundation/hardhat-network-helpers": "^1.1.2",
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@nomicfoundation/hardhat-verify": "^2.1.3",
+    "@typechain/ethers-v6": "^0.5.1",
+    "@typechain/hardhat": "^9.1.0",
+    "@types/chai": "^4.3.20",
+    "@types/mocha": "^10.0.10",
+    "chai": "^4.5.0",
+    "ethers": "^6.16.0",
+    "hardhat": "^2.28.6",
+    "hardhat-gas-reporter": "^1.0.10",
+    "solidity-coverage": "^0.8.17",
+    "ts-node": "^10.9.2",
+    "typechain": "^8.3.2",
+    "typescript": "^6.0.3"
   }
 }

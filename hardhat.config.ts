@@ -1,38 +1,48 @@
-import hardhatToolboxMochaEthersPlugin from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
-import { configVariable, defineConfig } from "hardhat/config";
+require("@nomicfoundation/hardhat-toolbox");
+require("dotenv").config();
 
-export default defineConfig({
-  plugins: [hardhatToolboxMochaEthersPlugin],
+/** @type import('hardhat/config').HardhatUserConfig */
+module.exports = {
   solidity: {
-    profiles: {
-      default: {
-        version: "0.8.28",
+    version: "0.8.28",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200,
       },
-      production: {
-        version: "0.8.28",
-        settings: {
-          optimizer: {
-            enabled: true,
-            runs: 200,
-          },
-        },
-      },
+      evmVersion: "cancun",
     },
   },
+
   networks: {
-    hardhatMainnet: {
-      type: "edr-simulated",
-      chainType: "l1",
+    hardhat: {
+      chainId: 31337,
     },
-    hardhatOp: {
-      type: "edr-simulated",
-      chainType: "op",
+
+    localhost: {
+      url: "http://127.0.0.1:8545",
+      chainId: 31337,
     },
+
+    // ✅ NEW: Sepolia network added
     sepolia: {
-      type: "http",
-      chainType: "l1",
-      url: configVariable("SEPOLIA_RPC_URL"),
-      accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
+      url: process.env.SEPOLIA_RPC_URL,
+      accounts: [process.env.PRIVATE_KEY],
+      chainId: 11155111,
     },
   },
-});
+
+  paths: {
+    sources: "./contracts",
+    tests: "./test",
+    cache: "./cache",
+    artifacts: "./artifacts",
+  },
+
+  gasReporter: {
+    enabled: process.env.REPORT_GAS === "true",
+    currency: "USD",
+    showMethodSig: true,
+    excludeContracts: [],
+  },
+};
