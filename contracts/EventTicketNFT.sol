@@ -8,7 +8,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title  EventTicketNFT
- * @author CS 218 — Team RIP Scrooge
+ * @author CS 218 — Team Minimalists
  * @notice NFT-based event ticketing system implementing ERC-721 ownership and
  *         ERC-2981 on-chain royalties. Includes an internal resale marketplace
  *         with royalty-deducting settlement, anti-scalping per-buyer caps,
