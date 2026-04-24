@@ -7,12 +7,14 @@ provides the full buy / resell / check-in experience.
 
 **Team — CS 218 · Team Minimalists**
 
-- S Varshith Reddy
-- Harshith Pasupuleti
-- Sarath Chandra
-- Manish Donthula
-- Kushal Gunala (Optimizer)
-- Sairaj S
+| Name | Roll Number |
+|------|------------|
+| S Varshith Reddy | 240001071|
+| Donthula Manish | 240001029 |
+| Sarath Chandra Jandhyala | 240041020 |
+| Gunala Kushal Goud | 240001033 |
+| Harshith Pasupuleti| 240003034 |
+| Srigiri Sairaj | 240001070 |
 
 ---
 
