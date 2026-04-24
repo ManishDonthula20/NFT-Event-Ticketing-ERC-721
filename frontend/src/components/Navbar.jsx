@@ -23,12 +23,14 @@ export default function Navbar({
       <header className="nav">
         <div className="container nav-inner">
           <Link to="/" className="brand" title="BookYourShow">
-            <span className="brand-mark" aria-hidden="true">
-              <svg width="18" height="18" viewBox="0 0 64 64" fill="currentColor">
-                <path d="M17 24 L28 32 L17 40 Z" />
-                <circle cx="47" cy="32" r="3" />
-              </svg>
-            </span>
+            <img
+              src="/favicon.svg"
+              alt=""
+              className="brand-mark"
+              width="32"
+              height="32"
+              draggable="false"
+            />
             <span>BookYourShow</span>
           </Link>
 

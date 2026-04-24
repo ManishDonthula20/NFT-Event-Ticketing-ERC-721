@@ -113,7 +113,6 @@ hr.rule { border: none; height: 1px; background: var(--border); margin: 32px 0; 
   border-bottom: 1px solid var(--border);
   background: var(--paper);
   position: sticky; top: 0; z-index: 10;
-  backdrop-filter: saturate(180%) blur(4px);
 }
 .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 68px; }
 .brand {
@@ -122,10 +121,11 @@ hr.rule { border: none; height: 1px; background: var(--border); margin: 32px 0; 
   display: flex; align-items: center; gap: 10px;
 }
 .brand-mark {
-  width: 28px; height: 28px; border-radius: 6px;
-  background: var(--ink-900); color: var(--paper);
-  display: inline-flex; align-items: center; justify-content: center;
-  font-family: var(--serif); font-size: 15px;
+  width: 32px; height: 32px; border-radius: 8px;
+  display: inline-block; flex: none;
+  /* Render the SVG pixel-perfect; no aliasing from parent filters. */
+  image-rendering: auto;
+  user-select: none;
 }
 .nav-links { display: flex; align-items: center; gap: 6px; }
 .nav-link {
