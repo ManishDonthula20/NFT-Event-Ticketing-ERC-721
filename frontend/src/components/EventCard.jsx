@@ -28,7 +28,7 @@ export default function EventCard({ event }) {
 
   return (
     <article className="card event-card interactive" style={{padding: 0, overflow: "hidden"}}>
-      <CardThumbnail imageUri={meta?.image} alt={event.name} />
+      <CardThumbnail imageUri={meta?.image} alt={event.name} category={event.category} />
       <div style={{padding: 22, display: "flex", flexDirection: "column", gap: 14}}>
       <div className="flex justify-between items-center">
         <span className="tag neutral">{event.category || "Event"}</span>
@@ -43,6 +43,21 @@ export default function EventCard({ event }) {
             <> · Royalty {bpsToPercent(event.royaltyBps)}%</>
           )}
         </p>
+        {event.description && (
+          <p
+            className="muted mt-8"
+            style={{
+              fontSize: 13,
+              lineHeight: 1.5,
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {event.description}
+          </p>
+        )}
       </div>
 
       <div>
@@ -84,12 +99,14 @@ export default function EventCard({ event }) {
   );
 }
 
-function CardThumbnail({ imageUri, alt }) {
+function CardThumbnail({ imageUri, alt, category }) {
   const gateways = imageUri ? ipfsGatewayUrls(imageUri) : [];
   const [gwIdx, setGwIdx] = useState(0);
   const [failed, setFailed] = useState(false);
 
-  if (!imageUri || failed || gateways.length === 0) return null;
+  if (!imageUri || failed || gateways.length === 0) {
+    return <PlaceholderThumb alt={alt} category={category} />;
+  }
 
   return (
     <img
@@ -108,5 +125,62 @@ function CardThumbnail({ imageUri, alt }) {
         else setFailed(true);
       }}
     />
+  );
+}
+
+// Deterministic gradient so events without an on-IPFS banner still get
+// a distinctive card. Hash the event name so the same event always
+// renders the same colours across sessions.
+function gradientFor(seed) {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const hue1 = h % 360;
+  const hue2 = (hue1 + 45) % 360;
+  return `linear-gradient(135deg, hsl(${hue1} 70% 55%), hsl(${hue2} 75% 40%))`;
+}
+
+function PlaceholderThumb({ alt, category }) {
+  const initial = (alt || "?").trim().charAt(0).toUpperCase();
+  return (
+    <div
+      role="img"
+      aria-label={alt}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: "100%",
+        aspectRatio: "16 / 9",
+        background: gradientFor(alt || "event"),
+        color: "rgba(255,255,255,0.92)",
+        fontFamily: "var(--serif)",
+        fontSize: "3rem",
+        fontWeight: 700,
+        letterSpacing: "0.02em",
+        textShadow: "0 2px 8px rgba(0,0,0,0.25)",
+        position: "relative",
+      }}
+    >
+      {initial}
+      {category && (
+        <span
+          style={{
+            position: "absolute",
+            bottom: 10,
+            right: 12,
+            fontSize: 11,
+            fontFamily: "var(--sans)",
+            fontWeight: 500,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            padding: "3px 8px",
+            background: "rgba(0,0,0,0.28)",
+            borderRadius: 999,
+          }}
+        >
+          {category}
+        </span>
+      )}
+    </div>
   );
 }

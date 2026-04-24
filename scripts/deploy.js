@@ -12,13 +12,32 @@ const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
 
+// The contract now stores ONLY a metadata URI on chain. For the local
+// demo seed we inline the full JSON metadata as a base64 data URL so the
+// frontend renders the demo events fully (banner, name, description,
+// category, section labels) without depending on Pinata or a local IPFS
+// daemon being up.
+function demoMetadata(ev) {
+  const doc = {
+    name: ev.name,
+    description: ev.description,
+    category: ev.category,
+    image: ev.image,
+    attributes: [{ trait_type: "Category", value: ev.category }],
+    sections: ev.sections.map((s) => ({ name: s.name })),
+  };
+  return "data:application/json;base64," + Buffer.from(JSON.stringify(doc)).toString("base64");
+}
+
 const DEMO_EVENTS = [
   {
     name: "Indie Night Live",
     category: "Music",
-    metadataURI: "ipfs://bafybeigindiecid",
+    description:
+      "An intimate evening of local indie bands taking over the rooftop stage. Expect three sets, a guest DJ between acts, and street-food trucks downstairs.",
+    image: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&w=1200&q=80",
     daysAhead: 14,
-    royaltyBps: 800, // 8%
+    royaltyBps: 800,
     maxPerBuyer: 4,
     sections: [
       { name: "Front Row", priceEth: "0.12", maxTickets: 20 },
@@ -28,9 +47,11 @@ const DEMO_EVENTS = [
   {
     name: "Blockchain & You Conference",
     category: "Conference",
-    metadataURI: "ipfs://bafybeigconfcid",
+    description:
+      "A full-day conference covering real-world smart-contract design, scaling strategies, and security best practices, with workshops and live demos.",
+    image: "https://images.unsplash.com/photo-1591115765373-5207764f72e7?auto=format&fit=crop&w=1200&q=80",
     daysAhead: 21,
-    royaltyBps: 500, // 5%
+    royaltyBps: 500,
     maxPerBuyer: 2,
     sections: [
       { name: "Speaker Pass", priceEth: "0.35", maxTickets: 30 },
@@ -40,9 +61,11 @@ const DEMO_EVENTS = [
   {
     name: "Theatre Night — A Midsummer Script Dream",
     category: "Theatre",
-    metadataURI: "ipfs://bafybeigtheatercid",
+    description:
+      "A witty modern retelling of Shakespeare's classic performed by the city's resident troupe. Runtime ~110 minutes with a 15-minute interval.",
+    image: "https://images.unsplash.com/photo-1503095396549-807759245b35?auto=format&fit=crop&w=1200&q=80",
     daysAhead: 30,
-    royaltyBps: 1000, // 10%
+    royaltyBps: 1000,
     maxPerBuyer: 6,
     sections: [
       { name: "Orchestra", priceEth: "0.08", maxTickets: 20 },
@@ -80,14 +103,12 @@ async function main() {
     const now = Math.floor(Date.now() / 1000);
     for (const ev of DEMO_EVENTS) {
       const sections = ev.sections.map((s) => ({
-        name: s.name,
         priceWei: hre.ethers.parseEther(s.priceEth),
         maxTickets: s.maxTickets,
       }));
+      const metadataURI = demoMetadata(ev);
       const tx = await contract.createEvent(
-        ev.name,
-        ev.category,
-        ev.metadataURI,
+        metadataURI,
         now + ev.daysAhead * 24 * 60 * 60,
         ev.royaltyBps,
         ev.maxPerBuyer,

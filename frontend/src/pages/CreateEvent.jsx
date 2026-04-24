@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { parseETH, humanizeError, percentToBps } from "../utils/helpers";
 import { useInrRate, weiToInr, formatINR } from "../hooks/useCurrency";
+import { uploadFile, uploadJSON, toIpfsUri, ipfsUploadStatus } from "../utils/ipfsUpload";
 
 const CATEGORIES = ["Music", "Theatre", "Sports", "Conference", "Workshop", "Community", "Other"];
 
@@ -12,15 +13,20 @@ const defaultSection = () => ({ name: "General", priceEth: "", maxTickets: "100"
 export default function CreateEvent({ contract, isConnected, connect, toast, bump }) {
   const navigate = useNavigate();
   const rate = useInrRate();
+  const fileInputRef = useRef(null);
   const [form, setForm] = useState({
     name: "",
     category: "Music",
-    metadataURI: "",
+    description: "",
     date: "",
     royaltyPercent: "10",
     maxPerBuyer: "4",
   });
   const [sections, setSections] = useState([defaultSection()]);
+
+  // Image + IPFS upload state
+  const [image, setImage] = useState(null); // { file, previewUrl, cid | null }
+  const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -64,14 +70,40 @@ export default function CreateEvent({ contract, isConnected, connect, toast, bum
     [sections]
   );
 
+  // --------- Image handling ---------
+  const onImageSelected = (file) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.danger("Please select an image file.");
+      return;
+    }
+    if (file.size > 6 * 1024 * 1024) {
+      toast.danger("Image is larger than 6 MB. Pick a smaller file.");
+      return;
+    }
+    setImage({
+      file,
+      previewUrl: URL.createObjectURL(file),
+      cid: null,
+    });
+  };
+
+  const clearImage = () => {
+    if (image?.previewUrl) URL.revokeObjectURL(image.previewUrl);
+    setImage(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     if (!isConnected) { await connect(); return; }
 
     if (!form.name.trim()) return toast.danger("Event name is required.");
+    if (!form.description.trim())
+      return toast.danger("Please add a short description so buyers know what the event is about.");
     const dateUnix = Math.floor(new Date(form.date).getTime() / 1000);
-    if (!dateUnix || dateUnix <= Math.floor(Date.now() / 1000))
-      return toast.danger("Date must be in the future.");
+    if (!dateUnix || dateUnix <= Math.floor(Date.now() / 1000) + 86400)
+      return toast.danger("Date must be at least 1 day in the future.");
     const royaltyBps = percentToBps(parseFloat(form.royaltyPercent) || 0);
     if (royaltyBps > 5000) return toast.danger("Royalty cannot exceed 50%.");
     const maxPerBuyer = parseInt(form.maxPerBuyer, 10);
@@ -103,21 +135,48 @@ export default function CreateEvent({ contract, isConnected, connect, toast, bum
 
     try {
       setBusy(true);
-      toast.pending("Creating event…");
-      await contract.createEvent({
+
+      // Everything that isn't required for on-chain logic (name, description,
+      // category, section labels, banner image) lives in this JSON document
+      // that we pin to IPFS. The contract only sees the resulting URI.
+      setUploading(true);
+      let imageUri = null;
+      if (image?.file) {
+        toast.pending("Uploading image to IPFS…");
+        const imageCid = await uploadFile(image.file);
+        imageUri = `ipfs://${imageCid}`;
+        setImage((img) => (img ? { ...img, cid: imageCid } : img));
+      }
+
+      toast.pending("Pinning event metadata to IPFS…");
+      const metaCid = await uploadJSON({
         name: form.name.trim(),
+        description: form.description.trim(),
         category: form.category,
-        metadataURI: form.metadataURI.trim(),
+        image: imageUri,
+        attributes: [
+          { trait_type: "Category", value: form.category },
+          { trait_type: "Sections", value: sections.length },
+        ],
+        sections: sections.map((s) => ({ name: s.name.trim() })),
+      });
+      const metadataURI = toIpfsUri(metaCid);
+      setUploading(false);
+
+      toast.pending("Creating event on chain…");
+      await contract.createEvent({
+        metadataURI,
         date: dateUnix,
         royaltyBps,
         maxPerBuyer,
-        sections: payloadSections,
+        sections: payloadSections, // chain only needs priceWei + maxTickets
       });
       toast.success("Event created successfully.");
       bump?.();
-      navigate("/");
+      navigate("/events");
     } catch (err) {
       toast.danger(humanizeError(err));
+      setUploading(false);
     } finally {
       setBusy(false);
     }
@@ -143,6 +202,22 @@ export default function CreateEvent({ contract, isConnected, connect, toast, bum
             />
           </div>
 
+          <div className="field row2">
+            <label>Description *</label>
+            <textarea
+              rows={4}
+              value={form.description}
+              onChange={set("description")}
+              placeholder="Tell buyers what your event is about, the vibe, the lineup, anything they should know…"
+              required
+            />
+            <div className="hint">
+              Stored in the event's IPFS metadata document alongside the
+              banner image. Content-addressed, so it cannot be tampered
+              with after creation — and much cheaper than storing on chain.
+            </div>
+          </div>
+
           <div className="field">
             <label>Category</label>
             <select value={form.category} onChange={set("category")}>
@@ -161,25 +236,80 @@ export default function CreateEvent({ contract, isConnected, connect, toast, bum
           </div>
 
           <div className="field row2">
-            <label>Metadata URI</label>
-            <input
-              type="text"
-              value={form.metadataURI}
-              onChange={set("metadataURI")}
-              placeholder="ipfs://bafybei…/metadata.json"
-            />
-            <div className="hint" style={{lineHeight: 1.55}}>
-              Points at a JSON file on IPFS describing the event. The
-              app renders the <code>image</code>, <code>description</code>,
-              and any <code>attributes</code> on the event page.
-              {" "}
-              <a
-                href="https://docs.pinata.cloud/web3/pinning/pinning-files"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                How to upload to IPFS →
-              </a>
+            <label>Event banner</label>
+            <div
+              className="card"
+              style={{
+                padding: 14,
+                background: "var(--surface-alt)",
+                border: "1px dashed var(--border-strong)",
+              }}
+            >
+              {image?.previewUrl ? (
+                <div>
+                  <img
+                    src={image.previewUrl}
+                    alt="selected"
+                    style={{
+                      width: "100%",
+                      maxHeight: 220,
+                      objectFit: "cover",
+                      borderRadius: 8,
+                      marginBottom: 10,
+                    }}
+                  />
+                  <div className="flex gap-8" style={{flexWrap: "wrap"}}>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={busy}
+                    >
+                      Replace image
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      onClick={clearImage}
+                      disabled={busy}
+                    >
+                      Remove
+                    </button>
+                    {image.cid && (
+                      <span
+                        className="muted"
+                        style={{fontSize: 12, marginLeft: "auto"}}
+                      >
+                        pinned to IPFS
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-col gap-8" style={{alignItems: "flex-start"}}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={busy}
+                  >
+                    Choose an image…
+                  </button>
+                  <div className="hint" style={{lineHeight: 1.55}}>
+                    When you submit, BookYourShow uploads this image plus a
+                    metadata JSON to IPFS using <b>{ipfsUploadStatus()}</b>{" "}
+                    and stores the resulting link on-chain. PNG/JPG/WebP,
+                    up to 6 MB.
+                  </div>
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                style={{display: "none"}}
+                onChange={(e) => onImageSelected(e.target.files?.[0])}
+              />
             </div>
           </div>
 
@@ -302,7 +432,9 @@ export default function CreateEvent({ contract, isConnected, connect, toast, bum
 
         <div className="flex justify-end items-center">
           <button className="btn btn-accent btn-lg" type="submit" disabled={busy}>
-            {busy ? "Submitting…" : !isConnected ? "Connect wallet" : "Create event"}
+            {busy
+              ? uploading ? "Uploading to IPFS…" : "Submitting…"
+              : !isConnected ? "Connect wallet" : "Create event"}
           </button>
         </div>
       </form>

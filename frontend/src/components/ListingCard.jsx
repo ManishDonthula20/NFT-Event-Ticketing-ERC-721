@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   formatDate,
   formatETH,
-  truncateAddress,
   humanizeError,
   bpsToPercent,
   calculateRoyalty,
@@ -13,7 +12,6 @@ import {
 import { useInrRate, weiToInr, formatINR } from "../hooks/useCurrency";
 
 export default function ListingCard({
-  listing,
   event,
   section,
   tokenId,
@@ -37,7 +35,7 @@ export default function ListingCard({
       setBusy(true);
       toast.pending("Purchasing ticket…");
       await contract.buyResaleTicket(tokenId, price);
-      toast.success(`Bought ticket #${tokenId}.`);
+      toast.success("Ticket purchased.");
       onAction?.();
     } catch (e) {
       toast.danger(humanizeError(e));
@@ -51,8 +49,9 @@ export default function ListingCard({
 
   return (
     <article className="card">
-      <div className="flex justify-between items-center mb-8">
-        <span className="tag neutral">#{tokenId}</span>
+      <div className="flex justify-between items-center mb-8" style={{gap: 8, flexWrap: "wrap"}}>
+        <span className="tag neutral">Resale</span>
+        {section?.name && <span className="tag green">{section.name}</span>}
         {event.cancelled && <span className="tag red">Event cancelled</span>}
         {eventPast && <span className="tag neutral">Past</span>}
         {expired && <span className="tag amber">Listing expired</span>}
@@ -75,11 +74,6 @@ export default function ListingCard({
       </div>
 
       <div className="flex justify-between mt-8" style={{fontSize: 12, color: "var(--ink-500)"}}>
-        <span>Seller</span>
-        <span className="mono">{truncateAddress(seller)}</span>
-      </div>
-
-      <div className="flex justify-between" style={{fontSize: 12, color: "var(--ink-500)"}}>
         <span>Royalty ({bpsToPercent(event.royaltyBps)}%)</span>
         <span>{formatETH(royalty, 5)} ETH → organiser</span>
       </div>

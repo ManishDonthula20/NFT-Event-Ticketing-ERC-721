@@ -1,7 +1,35 @@
 import { useState, useEffect, useCallback } from "react";
+import { getMetadata } from "./useIpfsMetadata";
 
 /**
- * Fetches all events from the contract.
+ * Merges the human-readable fields from an event's IPFS metadata JSON
+ * into the bare on-chain record. The contract intentionally stores NO
+ * display text — name, description, category and section labels all
+ * live in the off-chain document. If the metadata fetch fails we fall
+ * back to reasonable placeholders so the UI never shows "undefined".
+ */
+async function hydrateEventWithMetadata(ev) {
+  if (!ev) return ev;
+  const meta = await getMetadata(ev.metadataURI).catch(() => null);
+  const sectionLabels = Array.isArray(meta?.sections) ? meta.sections : [];
+  return {
+    ...ev,
+    name: meta?.name || `Event #${ev.id}`,
+    description: meta?.description || "",
+    category: meta?.category || "",
+    image: meta?.image || null,
+    meta: meta || null,
+    sections: ev.sections.map((s, i) => ({
+      ...s,
+      name: sectionLabels[i]?.name || s.name || `Section ${i + 1}`,
+    })),
+  };
+}
+
+/**
+ * Fetches all events from the contract AND merges each one's IPFS
+ * metadata so downstream components can read `event.name`, `.description`,
+ * `.category` etc. synchronously.
  */
 export function useEvents(contractHook, refreshKey = 0) {
   const [events, setEvents] = useState([]);
@@ -22,7 +50,8 @@ export function useEvents(contractHook, refreshKey = 0) {
       const promises = [];
       for (let i = 0; i < count; i++) promises.push(getEvent(i));
       const rows = (await Promise.all(promises)).filter(Boolean);
-      setEvents(rows);
+      const hydrated = await Promise.all(rows.map(hydrateEventWithMetadata));
+      setEvents(hydrated);
     } catch (e) {
       setError(e);
     } finally {
@@ -68,10 +97,23 @@ async function hydrateTicket(tokenId, helpers) {
   // (e.g. token burned). Drop it — but keep going for the others.
   if (evR.status === "rejected") return null;
 
+  const hydratedEvent = await hydrateEventWithMetadata(evR.value);
+  const rawSection = secR.status === "fulfilled" ? secR.value : null;
+  // Merge the section's human label from the same metadata doc.
+  const section = rawSection
+    ? {
+        ...rawSection,
+        name:
+          hydratedEvent?.sections?.[rawSection.id]?.name ||
+          rawSection.name ||
+          `Section ${rawSection.id + 1}`,
+      }
+    : null;
+
   return {
     tokenId,
     eventId: evIdR.status === "fulfilled" ? evIdR.value : null,
-    event: evR.value,
+    event: hydratedEvent,
     listing:
       lstR.status === "fulfilled"
         ? lstR.value
@@ -79,7 +121,7 @@ async function hydrateTicket(tokenId, helpers) {
     valid: validR.status === "fulfilled" ? validR.value : true,
     owner: ownerR.status === "fulfilled" ? ownerR.value : null,
     sectionId: secIdR.status === "fulfilled" ? secIdR.value : null,
-    section: secR.status === "fulfilled" ? secR.value : null,
+    section,
   };
 }
 
@@ -232,14 +274,25 @@ export function useListings(contractHook, refreshKey = 0) {
           const [lstR, evR, evIdR, ownR, secIdR, secR] = results;
           if (lstR.status !== "fulfilled" || !lstR.value?.active) return null;
           if (evR.status !== "fulfilled") return null;
+          const hydratedEvent = await hydrateEventWithMetadata(evR.value);
+          const rawSection = secR.status === "fulfilled" ? secR.value : null;
+          const section = rawSection
+            ? {
+                ...rawSection,
+                name:
+                  hydratedEvent?.sections?.[rawSection.id]?.name ||
+                  rawSection.name ||
+                  `Section ${rawSection.id + 1}`,
+              }
+            : null;
           return {
             tokenId,
             eventId: evIdR.status === "fulfilled" ? evIdR.value : null,
-            event: evR.value,
+            event: hydratedEvent,
             listing: lstR.value,
             seller: ownR.status === "fulfilled" ? ownR.value : lstR.value.seller,
             sectionId: secIdR.status === "fulfilled" ? secIdR.value : null,
-            section: secR.status === "fulfilled" ? secR.value : null,
+            section,
           };
         })
       );

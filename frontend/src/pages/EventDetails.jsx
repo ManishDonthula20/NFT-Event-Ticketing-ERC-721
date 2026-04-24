@@ -4,15 +4,14 @@ import {
   formatDate,
   formatDateTime,
   formatETH,
-  truncateAddress,
   humanizeError,
   bpsToPercent,
   ticketsRemaining,
   isPast,
   isSameAddress,
 } from "../utils/helpers";
-import { ipfsToHttp, ipfsGatewayUrls } from "../utils/ipfs";
-import { useIpfsMetadata } from "../hooks/useIpfsMetadata";
+import { ipfsGatewayUrls } from "../utils/ipfs";
+import { useIpfsMetadata, getMetadata } from "../hooks/useIpfsMetadata";
 import { useInrRate, weiToInr, formatINR } from "../hooks/useCurrency";
 
 export default function EventDetails({ contract, account, isConnected, connect, toast, bump }) {
@@ -35,7 +34,22 @@ export default function EventDetails({ contract, account, isConnected, connect, 
     try {
       const ev = await contract.getEvent(eventId);
       if (!ev) return;
-      setEvent(ev);
+      // Merge the event's IPFS metadata so the page can display name,
+      // description, category, section labels etc. even though the contract
+      // no longer stores them.
+      const metaDoc = await getMetadata(ev.metadataURI).catch(() => null);
+      const sectionLabels = Array.isArray(metaDoc?.sections) ? metaDoc.sections : [];
+      setEvent({
+        ...ev,
+        name: metaDoc?.name || `Event #${ev.id}`,
+        description: metaDoc?.description || "",
+        category: metaDoc?.category || "",
+        image: metaDoc?.image || null,
+        sections: ev.sections.map((s, i) => ({
+          ...s,
+          name: sectionLabels[i]?.name || s.name || `Section ${i + 1}`,
+        })),
+      });
       if (account) {
         setBought(await contract.ticketsBoughtBy(account, eventId));
       } else {
@@ -164,24 +178,27 @@ export default function EventDetails({ contract, account, isConnected, connect, 
         </p>
         <h1>{event.name}</h1>
         <p className="lead mt-16">
-          {formatDateTime(event.date)} · Organised by{" "}
-          <span className="mono" style={{fontSize: "0.9em"}}>
-            {truncateAddress(event.organiser)}
-          </span>
-          {isSameAddress(event.organiser, account) && " (you)"}
+          {formatDateTime(event.date)}
+          {isSameAddress(event.organiser, account) && " · Organised by you"}
         </p>
       </div>
 
       <div className="grid" style={{gridTemplateColumns: "2fr 1fr", gap: 24, alignItems: "start"}}>
         {/* Left: details */}
         <div className="flex-col gap-24">
-          <EventPoster metadataURI={event.metadataURI} meta={meta} metaLoading={metaLoading} alt={event.name} />
+          <EventPoster
+            metadataURI={event.metadataURI}
+            meta={meta}
+            metaLoading={metaLoading}
+            alt={event.name}
+            category={event.category}
+          />
 
-          {meta?.description && (
+          {(event.description || meta?.description) && (
             <div className="card">
               <h2 style={{fontSize: "1.3rem", marginBottom: 12}}>About this event</h2>
               <p style={{whiteSpace: "pre-wrap", color: "var(--ink-700)", lineHeight: 1.7}}>
-                {meta.description}
+                {event.description || meta?.description}
               </p>
             </div>
           )}
@@ -252,21 +269,11 @@ export default function EventDetails({ contract, account, isConnected, connect, 
                 {event.maxPerBuyer} ticket{event.maxPerBuyer > 1 ? "s" : ""}{" "}
                 <span className="muted">(across all sections)</span>
               </dd>
-              <dt className="muted">Organiser</dt>
-              <dd className="mono" style={{fontSize: "0.9em"}}>{truncateAddress(event.organiser)}</dd>
-              {event.metadataURI && (
-                <>
-                  <dt className="muted">Metadata</dt>
-                  <dd style={{overflowWrap: "anywhere"}}>
-                    <a href={ipfsToHttp(event.metadataURI)} target="_blank" rel="noopener noreferrer">
-                      View on IPFS
-                    </a>
-                    <span className="muted mono" style={{fontSize: "0.85em", marginLeft: 8}}>
-                      {event.metadataURI}
-                    </span>
-                  </dd>
-                </>
-              )}
+              <dt className="muted">Available now</dt>
+              <dd>
+                {ticketsRemaining(event.maxTickets, event.ticketsSold)} of{" "}
+                {event.maxTickets} tickets
+              </dd>
             </dl>
           </div>
 
@@ -384,26 +391,30 @@ export default function EventDetails({ contract, account, isConnected, connect, 
 }
 
 /**
- * Poster banner that tries every public IPFS gateway before giving up.
+ * Poster banner. Renders the event's image through a rotating list of
+ * IPFS gateways when available; falls back to a deterministic gradient
+ * placeholder keyed off the event name so the hero still looks intentional.
  */
-function EventPoster({ metadataURI, meta, metaLoading, alt }) {
+function EventPoster({ metadataURI, meta, metaLoading, alt, category }) {
   const imageUri = meta?.image;
   const gateways = imageUri ? ipfsGatewayUrls(imageUri) : [];
   const [gwIdx, setGwIdx] = useState(0);
   const [failed, setFailed] = useState(false);
 
-  if (!metadataURI) return null;
-
-  if (metaLoading && !imageUri) {
+  if (metaLoading && !imageUri && metadataURI) {
     return (
       <div className="card" style={{padding: 0, overflow: "hidden"}}>
-        <div className="skel" style={{aspectRatio: "16 / 9", width: "100%"}} />
+        <div className="skel" style={{aspectRatio: "21 / 9", width: "100%"}} />
       </div>
     );
   }
 
   if (!imageUri || failed || gateways.length === 0) {
-    return null;
+    return (
+      <div className="card" style={{padding: 0, overflow: "hidden"}}>
+        <PosterPlaceholder alt={alt} category={category} />
+      </div>
+    );
   }
 
   return (
@@ -414,7 +425,7 @@ function EventPoster({ metadataURI, meta, metaLoading, alt }) {
         style={{
           display: "block",
           width: "100%",
-          aspectRatio: "16 / 9",
+          aspectRatio: "21 / 9",
           objectFit: "cover",
           background: "var(--surface-alt)",
         }}
@@ -423,6 +434,62 @@ function EventPoster({ metadataURI, meta, metaLoading, alt }) {
           else setFailed(true);
         }}
       />
+    </div>
+  );
+}
+
+function posterGradientFor(seed) {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const hue1 = h % 360;
+  const hue2 = (hue1 + 45) % 360;
+  return `linear-gradient(135deg, hsl(${hue1} 70% 55%), hsl(${hue2} 75% 40%))`;
+}
+
+function PosterPlaceholder({ alt, category }) {
+  return (
+    <div
+      role="img"
+      aria-label={alt}
+      style={{
+        position: "relative",
+        width: "100%",
+        aspectRatio: "21 / 9",
+        background: posterGradientFor(alt || "event"),
+        color: "rgba(255,255,255,0.95)",
+        display: "flex",
+        alignItems: "flex-end",
+        padding: 28,
+      }}
+    >
+      <div>
+        {category && (
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              opacity: 0.85,
+              marginBottom: 8,
+            }}
+          >
+            {category}
+          </div>
+        )}
+        <div
+          style={{
+            fontFamily: "var(--serif)",
+            fontSize: "2.2rem",
+            fontWeight: 700,
+            lineHeight: 1.15,
+            maxWidth: "80%",
+            textShadow: "0 2px 12px rgba(0,0,0,0.25)",
+          }}
+        >
+          {alt}
+        </div>
+      </div>
     </div>
   );
 }

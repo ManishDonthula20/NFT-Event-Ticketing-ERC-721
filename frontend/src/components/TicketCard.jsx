@@ -69,11 +69,25 @@ export default function TicketCard({
   return (
     <>
       <article className="card">
-        <div className="flex justify-between items-center mb-8">
-          <span className="tag neutral">#{tokenId}</span>
-          {!valid   && <span className="tag green">Checked in</span>}
-          {expired  && <span className="tag neutral">Past</span>}
-          {isListed && <span className="tag green">Listed</span>}
+        <div className="flex justify-between items-center mb-8" style={{gap: 8, flexWrap: "wrap"}}>
+          <div className="flex items-center" style={{gap: 8, flexWrap: "wrap"}}>
+            <span className="tag neutral">Ticket</span>
+            <span
+              className="tag neutral"
+              title="Show this token ID to the organiser at check-in"
+              style={{
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                letterSpacing: 0.2,
+              }}
+            >
+              #{String(tokenId)}
+            </span>
+          </div>
+          <div className="flex items-center" style={{gap: 6, flexWrap: "wrap"}}>
+            {!valid   && <span className="tag green">Checked in</span>}
+            {expired  && <span className="tag neutral">Past</span>}
+            {isListed && <span className="tag green">Listed</span>}
+          </div>
         </div>
 
         <h3 className="card-title" style={{marginBottom: 4}}>{event.name}</h3>
@@ -86,6 +100,44 @@ export default function TicketCard({
             <span className="tag green">Section: {section.name}</span>
           </div>
         )}
+
+        <div
+          className="flex justify-between items-center mt-16"
+          style={{
+            padding: "10px 12px",
+            background: "var(--ink-50, #f4f6f8)",
+            borderRadius: 8,
+            gap: 12,
+          }}
+        >
+          <div style={{fontSize: 12}}>
+            <div className="muted" style={{marginBottom: 2}}>Token ID (show at check-in)</div>
+            <div
+              style={{
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                fontSize: 15,
+                fontWeight: 600,
+                letterSpacing: 0.3,
+              }}
+            >
+              #{String(tokenId)}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(String(tokenId));
+                toast?.success?.(`Token ID #${tokenId} copied.`);
+              } catch {
+                toast?.danger?.("Could not copy token ID.");
+              }
+            }}
+          >
+            Copy
+          </button>
+        </div>
 
         <div className="price-row mt-16">
           <span className="label">Paid</span>
@@ -132,7 +184,7 @@ export default function TicketCard({
       {showListModal && (
         <div className="modal-backdrop" onClick={() => setShowListModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>List ticket #{tokenId}</h3>
+            <h3>List ticket for resale</h3>
             <p className="muted" style={{fontSize: 13, marginBottom: 18}}>
               On sale, {bpsToPercent(event.royaltyBps)}% royalty goes to the
               organiser. You receive the remainder.

@@ -12,15 +12,33 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @notice NFT-based event ticketing system implementing ERC-721 ownership and
  *         ERC-2981 on-chain royalties. Events are divided into one or more
  *         sections (e.g. "VIP", "Regular", "Economy") — each section carries
- *         its own name, price, and supply of tickets. Buyers choose the
- *         section they want at purchase time. Includes an internal resale
+ *         its own price and supply of tickets. Buyers choose the section
+ *         they want at purchase time. Includes an internal resale
  *         marketplace with royalty-deducting settlement, anti-scalping
  *         per-buyer caps, organiser check-in (invalidation), batch buying,
  *         and IPFS metadata.
  * @dev    All monetary amounts are in wei. Royalty is expressed in basis points
  *         (10_000 == 100%). Full NatSpec on every public/external function.
- *         Storage design keeps all heavy content off-chain: only an IPFS CID is
- *         stored per event; token URIs are derived from that CID + tokenId.
+ *
+ *         Storage layout is deliberately minimal — EVERY human-readable
+ *         string (event name, description, category, section labels,
+ *         banner image, etc.) lives off-chain in an IPFS-hosted JSON
+ *         document whose CID is stored as `metadataURI`. The contract
+ *         requires this URI to be non-empty but treats its contents as
+ *         opaque. Because IPFS CIDs are content-addressed, the document
+ *         cannot change without invalidating the CID already on chain,
+ *         so integrity is preserved without paying SSTORE gas for every
+ *         character.
+ *
+ *         Expected IPFS JSON shape (organiser tooling builds it):
+ *             {
+ *               "name": string,
+ *               "description": string,
+ *               "category": string,
+ *               "image": "ipfs://...",
+ *               "attributes": [ { trait_type, value }, ... ],
+ *               "sections": [ { "name": string }, ... ]
+ *             }
  *
  *         Top-level `EventInfo.priceWei` / `maxTickets` / `ticketsSold` are
  *         maintained as aggregates over the event's sections:
@@ -50,11 +68,13 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     // Types
     // ---------------------------------------------------------------------
 
-    /// @notice On-chain record for a single event.
+    /// @notice On-chain record for a single event. Human-readable strings
+    ///         (name, description, category, etc.) are NOT stored here —
+    ///         they live inside the JSON document referenced by
+    ///         `metadataURI`. Keeping the struct tight saves substantial
+    ///         gas on event creation.
     struct EventInfo {
-        string  name;          // Short human-readable title
-        string  category;      // e.g. "Music", "Sports"
-        string  metadataURI;   // IPFS URI with description, banner, poster
+        string  metadataURI;   // IPFS URI to JSON with name/description/category/image/section labels (REQUIRED)
         uint256 date;          // Unix timestamp; tickets cannot be bought past this
         uint256 priceWei;      // Cheapest section's price (aggregate, display-only)
         uint256 maxTickets;    // Hard supply cap (aggregate of all sections)
@@ -65,9 +85,10 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         bool    cancelled;     // If true, event cannot be purchased or resold
     }
 
-    /// @notice A single division / seating tier on an event.
+    /// @notice A single division / seating tier on an event. Display label
+    ///         (e.g. "VIP", "Regular") lives off-chain in the metadata JSON
+    ///         under `sections[sectionId].name`.
     struct Section {
-        string  name;          // e.g. "VIP", "Regular", "Economy"
         uint256 priceWei;      // Primary-sale price in wei for this section
         uint256 maxTickets;    // Supply cap for this section
         uint256 ticketsSold;   // Running counter for this section
@@ -76,7 +97,6 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     /// @notice Input used when creating an event — mirrors `Section` without
     ///         the `ticketsSold` counter (always starts at 0).
     struct SectionInput {
-        string  name;
         uint256 priceWei;
         uint256 maxTickets;
     }
@@ -131,8 +151,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     event EventCreated(
         uint256 indexed eventId,
         address indexed organiser,
-        string name,
-        string category,
+        string  metadataURI,
         uint256 date,
         uint256 sectionCount,
         uint256 maxTickets,
@@ -142,7 +161,6 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     event SectionCreated(
         uint256 indexed eventId,
         uint256 indexed sectionId,
-        string name,
         uint256 priceWei,
         uint256 maxTickets
     );
@@ -216,29 +234,26 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
      *         address can call; the caller becomes the organiser for that
      *         event and will receive primary-sale revenue plus EIP-2981
      *         royalties from resales.
-     * @dev    At least one section is required. Each section carries its own
-     *         name, price and supply. The event-level `priceWei` is stored as
-     *         the cheapest section's price for UI purposes only.
-     * @param  name         Human-readable title of the event.
-     * @param  category     Short category label (used by frontend filter).
-     * @param  metadataURI  IPFS URI (e.g. "ipfs://<CID>") pointing to JSON with
-     *                      description, banner image URL, location, etc.
+     * @dev    All display text (name, description, category, banner image,
+     *         per-section labels) must be uploaded to IPFS first; only the
+     *         resulting `metadataURI` is stored on chain. At least one
+     *         section is required.
+     * @param  metadataURI  IPFS URI (e.g. "ipfs://<CID>") to the event's
+     *                      metadata JSON. Must be non-empty.
      * @param  date         Unix timestamp of the event; must be > now + 1 day.
      * @param  royaltyBps   EIP-2981 royalty share in basis points (≤ MAX_ROYALTY_BPS).
      * @param  maxPerBuyer  Per-address purchase cap across all sections.
-     * @param  sections     Array of sections (name/priceWei/maxTickets each).
+     * @param  sections     Array of sections (priceWei/maxTickets each).
      * @return eventId      The numeric id assigned to the newly created event.
      */
     function createEvent(
-        string calldata name,
-        string calldata category,
         string calldata metadataURI,
         uint256 date,
         uint96  royaltyBps,
         uint32  maxPerBuyer,
         SectionInput[] calldata sections
     ) external returns (uint256 eventId) {
-        require(bytes(name).length != 0, "Name required");
+        require(bytes(metadataURI).length != 0, "metadataURI required");
         // Enforce at least a 24h lead-time so buyers have a chance to react and
         // to prevent "create-and-drain" flash events.
         require(date > block.timestamp + 1 days, "Event must be at least 1 day in the future");
@@ -260,17 +275,15 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
 
         for (uint256 i = 0; i < sections.length; ) {
             SectionInput calldata s = sections[i];
-            require(bytes(s.name).length != 0, "Section name required");
             require(s.maxTickets > 0, "Section maxTickets must be > 0");
 
             secArr.push(Section({
-                name:        s.name,
                 priceWei:    s.priceWei,
                 maxTickets:  s.maxTickets,
                 ticketsSold: 0
             }));
 
-            emit SectionCreated(eventId, i, s.name, s.priceWei, s.maxTickets);
+            emit SectionCreated(eventId, i, s.priceWei, s.maxTickets);
 
             totalMax += s.maxTickets;
             if (s.priceWei < minPrice) minPrice = s.priceWei;
@@ -278,8 +291,6 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         }
 
         _events[eventId] = EventInfo({
-            name:         name,
-            category:     category,
             metadataURI:  metadataURI,
             date:         date,
             priceWei:     minPrice,
@@ -294,8 +305,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         emit EventCreated(
             eventId,
             msg.sender,
-            name,
-            category,
+            metadataURI,
             date,
             sections.length,
             totalMax,
@@ -304,13 +314,14 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     }
 
     /**
-     * @notice Updates the editable event-level fields (name, category,
-     *         metadata, date, royalty, per-buyer cap). Section prices and
-     *         supplies are managed separately via `addTicketsToSection` and
-     *         are not touched here.
+     * @notice Updates the editable event-level fields (metadata URI, date,
+     *         royalty, per-buyer cap). Section prices and supplies are
+     *         managed separately via `addTicketsToSection` and are not
+     *         touched here. To rename the event or edit its description,
+     *         upload a new metadata JSON to IPFS and pass the new CID.
      * @dev    Safety rules:
-     *          - `name` / `category` / `metadataURI` / `date` / `maxPerBuyer`
-     *            are always editable (while the event is live and uncancelled).
+     *          - `metadataURI` / `date` / `maxPerBuyer` are always editable
+     *            (while the event is live and uncancelled).
      *          - `royaltyBps` may ONLY be changed while no ticket has been
      *            sold, otherwise we'd rewrite terms on existing holders
      *            mid-event (unfair and a griefing vector).
@@ -319,8 +330,6 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
      */
     function updateEvent(
         uint256 eventId,
-        string calldata name,
-        string calldata category,
         string calldata metadataURI,
         uint256 newDate,
         uint96  newRoyaltyBps,
@@ -332,7 +341,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     {
         EventInfo storage ev = _events[eventId];
         require(!ev.cancelled, "Event cancelled");
-        require(bytes(name).length != 0, "Name required");
+        require(bytes(metadataURI).length != 0, "metadataURI required");
         require(newDate > block.timestamp + 1 days, "Event must be at least 1 day in the future");
         require(newRoyaltyBps <= MAX_ROYALTY_BPS, "Royalty exceeds cap");
         require(newMaxPerBuyer > 0, "maxPerBuyer must be > 0");
@@ -343,8 +352,6 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
             ev.royaltyBps = newRoyaltyBps;
         }
 
-        ev.name         = name;
-        ev.category     = category;
         ev.metadataURI  = metadataURI;
         ev.date         = newDate;
         ev.maxPerBuyer  = newMaxPerBuyer;

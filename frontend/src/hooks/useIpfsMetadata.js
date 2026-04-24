@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { ipfsGatewayUrls, isLikelyImageUri } from "../utils/ipfs";
 
+export { getMetadata };
+
 /**
  * Fetches an event's off-chain metadata document from IPFS.
  *
@@ -21,6 +23,15 @@ const cache = new Map(); // uri -> metadata document (or `null` for failure)
 const inflight = new Map(); // uri -> Promise<metadata>
 
 async function fetchMetadata(uri) {
+  // Inline data: URIs (used by the local demo seed and any tooling that
+  // wants to avoid a gateway round-trip). `fetch` handles these natively.
+  if (uri.startsWith("data:")) {
+    const res = await fetch(uri);
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("json")) return await res.json();
+    if (ct.startsWith("image/")) return { image: uri };
+    try { return JSON.parse(await res.text()); } catch { return { image: uri }; }
+  }
   if (isLikelyImageUri(uri)) {
     return { image: uri };
   }
@@ -54,6 +65,32 @@ async function fetchMetadata(uri) {
     }
   }
   throw lastError || new Error("All IPFS gateways failed");
+}
+
+/**
+ * Async, cached accessor for the same metadata fetch the hook uses.
+ * Returns the parsed document or `null` on failure (negative-caches).
+ * Safe to call from `useEvents` hydration loops: N calls with the same
+ * URI collapse to a single network request thanks to the inflight map.
+ */
+async function getMetadata(uri) {
+  if (!uri) return null;
+  if (cache.has(uri)) return cache.get(uri);
+  let promise = inflight.get(uri);
+  if (!promise) {
+    promise = fetchMetadata(uri)
+      .then((meta) => {
+        cache.set(uri, meta);
+        return meta;
+      })
+      .catch(() => {
+        cache.set(uri, null);
+        return null;
+      })
+      .finally(() => inflight.delete(uri));
+    inflight.set(uri, promise);
+  }
+  return await promise;
 }
 
 export function useIpfsMetadata(uri) {

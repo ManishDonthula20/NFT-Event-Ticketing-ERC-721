@@ -62,15 +62,22 @@ export function useContract(signer, provider) {
 
   const createEvent = useCallback(
     async (params) => {
-      // params.sections: [{ name, priceWei, maxTickets }, ...]
+      // params.sections: [{ priceWei, maxTickets }, ...]
+      // All display text (name, description, category, section labels, banner)
+      // must already live inside the JSON document at params.metadataURI.
+      if (!params.metadataURI) {
+        throw new Error("metadataURI is required. Upload event metadata to IPFS first.");
+      }
+      const sections = params.sections.map((s) => ({
+        priceWei: s.priceWei,
+        maxTickets: s.maxTickets,
+      }));
       const tx = await sendWithGasBuffer("createEvent", [
-        params.name,
-        params.category,
         params.metadataURI,
         params.date,
         params.royaltyBps,
         params.maxPerBuyer,
-        params.sections,
+        sections,
       ]);
       return await tx.wait();
     },
@@ -144,10 +151,11 @@ export function useContract(signer, provider) {
 
   const updateEvent = useCallback(
     async (eventId, params) => {
+      if (!params.metadataURI) {
+        throw new Error("metadataURI is required. Upload updated metadata to IPFS first.");
+      }
       const tx = await sendWithGasBuffer("updateEvent", [
         eventId,
-        params.name,
-        params.category,
         params.metadataURI,
         params.date,
         params.royaltyBps,
@@ -177,14 +185,19 @@ export function useContract(signer, provider) {
   // -----------------------------------------------------------------------
   // Read functions — normalise BigInt → Number where appropriate
   // -----------------------------------------------------------------------
+  // Chain-level section record. Display label (`name`) is filled from
+  // off-chain metadata by the consuming hook (`useEvents`).
   const normaliseSection = (s, index) => ({
     id: index,
-    name: s.name,
+    name: `Section ${index + 1}`, // placeholder until metadata merges the real label
     priceWei: s.priceWei, // keep BigInt
     maxTickets: Number(s.maxTickets),
     ticketsSold: Number(s.ticketsSold),
   });
 
+  // Chain-level event record. Display text (name, description, category,
+  // section labels) lives off-chain — callers should pair this with the
+  // event's IPFS metadata (see `useEvents.js` / `useIpfsMetadata`).
   const getEvent = useCallback(
     async (eventId) => {
       if (!readContract) return null;
@@ -195,8 +208,9 @@ export function useContract(signer, provider) {
       ]);
       return {
         id: Number(eventId),
-        name: ev.name,
-        category: ev.category,
+        name: "",           // filled from IPFS metadata
+        category: "",       // filled from IPFS metadata
+        description: "",    // filled from IPFS metadata
         metadataURI: ev.metadataURI,
         date: Number(ev.date),
         priceWei: ev.priceWei, // min section price (aggregate)
@@ -271,8 +285,10 @@ export function useContract(signer, provider) {
         readContract.getSections(eventId).catch(() => []),
       ]);
       return {
-        name: ev.name,
-        category: ev.category,
+        id: Number(eventId),
+        name: "",
+        category: "",
+        description: "",
         metadataURI: ev.metadataURI,
         date: Number(ev.date),
         priceWei: ev.priceWei,

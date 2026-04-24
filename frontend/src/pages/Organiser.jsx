@@ -158,7 +158,6 @@ export default function Organiser({ contract, account, isConnected, connect, toa
                 <div className="flex justify-between items-center" style={{gap: 12, flexWrap: "wrap"}}>
                   <div style={{minWidth: 0}}>
                     <div className="flex items-center gap-8" style={{flexWrap: "wrap"}}>
-                      <span className="tag neutral mono">#{e.id}</span>
                       <Link to={`/event/${e.id}`}><b>{e.name}</b></Link>
                       {e.cancelled
                         ? <span className="tag red">Cancelled</span>
@@ -203,8 +202,7 @@ export default function Organiser({ contract, account, isConnected, connect, toa
                       <table className="data">
                         <thead>
                           <tr>
-                            <th>#</th>
-                            <th>Name</th>
+                            <th>Section</th>
                             <th className="right">Price</th>
                             <th className="right">Sold</th>
                             <th className="right">Actions</th>
@@ -218,7 +216,6 @@ export default function Organiser({ contract, account, isConnected, connect, toa
                               addingTo.sectionId === s.id;
                             return (
                               <tr key={s.id}>
-                                <td className="mono muted">{s.id}</td>
                                 <td><b>{s.name}</b></td>
                                 <td className="right mono">
                                   {formatETH(s.priceWei)} ETH

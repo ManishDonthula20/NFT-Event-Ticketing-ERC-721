@@ -7,6 +7,8 @@ import {
   humanizeError,
   isSameAddress,
 } from "../utils/helpers";
+import { uploadJSON, toIpfsUri } from "../utils/ipfsUpload";
+import { getMetadata } from "../hooks/useIpfsMetadata";
 
 const CATEGORIES = [
   "Music", "Theatre", "Sports", "Conference", "Workshop", "Community", "Other",
@@ -32,6 +34,7 @@ export default function EditEvent({ contract, account, isConnected, connect, toa
   const navigate = useNavigate();
 
   const [event, setEvent] = useState(null);
+  const [meta, setMeta] = useState(null); // previously-pinned metadata JSON
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -40,17 +43,23 @@ export default function EditEvent({ contract, account, isConnected, connect, toa
     setLoading(true);
     try {
       const ev = await contract.getEvent(eventId);
-      setEvent(ev);
-      if (ev) {
-        setForm({
-          name: ev.name,
-          category: ev.category || "Music",
-          metadataURI: ev.metadataURI || "",
-          date: unixToLocalInput(ev.date),
-          royaltyPercent: String(bpsToPercent(ev.royaltyBps)),
-          maxPerBuyer: String(ev.maxPerBuyer),
-        });
+      if (!ev) {
+        setEvent(null);
+        return;
       }
+      // The current on-chain record only has the metadataURI; pull the JSON
+      // so we can prefill the form with the last-pinned name/description/etc.
+      const existingMeta = await getMetadata(ev.metadataURI).catch(() => null);
+      setEvent(ev);
+      setMeta(existingMeta);
+      setForm({
+        name: existingMeta?.name || `Event #${ev.id}`,
+        category: existingMeta?.category || "Music",
+        description: existingMeta?.description || "",
+        date: unixToLocalInput(ev.date),
+        royaltyPercent: String(bpsToPercent(ev.royaltyBps)),
+        maxPerBuyer: String(ev.maxPerBuyer),
+      });
     } catch {
       setEvent(null);
     } finally {
@@ -138,11 +147,35 @@ export default function EditEvent({ contract, account, isConnected, connect, toa
 
     try {
       setBusy(true);
-      toast.pending("Updating event…");
-      await contract.updateEvent(eventId, {
+
+      // Pin a new metadata document reflecting the edits. We carry forward
+      // the original image and the per-section labels unchanged (the form
+      // here only edits top-level fields; section labels are locked after
+      // creation, matching the on-chain guarantee that section prices /
+      // supplies are immutable aside from supply extension).
+      toast.pending("Pinning updated metadata to IPFS…");
+      const nextMeta = {
+        ...(meta || {}),
         name: form.name.trim(),
+        description: form.description.trim(),
         category: form.category,
-        metadataURI: form.metadataURI.trim(),
+        image: meta?.image || null,
+        attributes: [
+          { trait_type: "Category", value: form.category },
+          { trait_type: "Sections", value: event?.sections?.length ?? 0 },
+        ],
+        sections: Array.isArray(meta?.sections)
+          ? meta.sections
+          : (event?.sections || []).map((s, i) => ({
+              name: s.name || `Section ${i + 1}`,
+            })),
+      };
+      const metaCid = await uploadJSON(nextMeta);
+      const metadataURI = toIpfsUri(metaCid);
+
+      toast.pending("Updating event on chain…");
+      await contract.updateEvent(eventId, {
+        metadataURI,
         date: dateUnix,
         royaltyBps,
         maxPerBuyer,
@@ -186,13 +219,17 @@ export default function EditEvent({ contract, account, isConnected, connect, toa
           </div>
 
           <div className="field row2">
-            <label>Metadata URI</label>
-            <input
-              type="text"
-              value={form.metadataURI}
-              onChange={set("metadataURI")}
-              placeholder="ipfs://bafybei…"
+            <label>Description</label>
+            <textarea
+              rows={4}
+              value={form.description}
+              onChange={set("description")}
+              placeholder="Short summary buyers will see on the event page…"
             />
+            <div className="hint">
+              Saved in the event's IPFS metadata document. Publishing an edit
+              pins a new JSON and updates the event's stored URI.
+            </div>
           </div>
 
           <div className="field">

@@ -3,7 +3,11 @@ const { ethers } = require("hardhat");
 const { time, loadFixture } =
   require("@nomicfoundation/hardhat-toolbox/network-helpers");
 
+// Only the CID / URI lives on chain now — everything else (name, description,
+// category, section labels, banner image) is expected to be in the JSON
+// document this URI points at. The contract treats the URI as opaque.
 const METADATA = "ipfs://bafybeigexamplecid";
+const METADATA_V2 = "ipfs://bafybeigexamplenewcid";
 
 // `getEvent` on an ethers.js Contract is shadowed by a built-in helper,
 // so we always call the on-chain view via getFunction.
@@ -11,10 +15,9 @@ const getEv = (contract, eventId) =>
   contract.getFunction("getEvent")(eventId);
 
 // Build a single "general" section — used by tests that don't care about
-// divisions. Matches the legacy shape (one price, one supply).
-const singleSection = (name, priceWei, maxTickets) => [
-  { name, priceWei, maxTickets },
-];
+// divisions. Section labels are off-chain now, so each section is just
+// (price, supply).
+const singleSection = (priceWei, maxTickets) => [{ priceWei, maxTickets }];
 
 describe("EventTicketNFT", function () {
   // -------------------------------------------------------------------
@@ -54,13 +57,11 @@ describe("EventTicketNFT", function () {
     const tx = await contract
       .connect(organiser)
       .createEvent(
-        "Summer Concert",
-        "Music",
         METADATA,
         future,
         royaltyBps,
         maxPerBuyer,
-        singleSection("General", price, maxTickets)
+        singleSection(price, maxTickets)
       );
     await tx.wait();
 
@@ -72,16 +73,14 @@ describe("EventTicketNFT", function () {
     const { contract, organiser, future } = deployed;
 
     const sections = [
-      { name: "VIP",      priceWei: ethers.parseEther("0.5"), maxTickets: 2 },
-      { name: "Regular",  priceWei: ethers.parseEther("0.2"), maxTickets: 5 },
-      { name: "Economy",  priceWei: ethers.parseEther("0.05"), maxTickets: 10 },
+      { priceWei: ethers.parseEther("0.5"),  maxTickets: 2 },  // VIP
+      { priceWei: ethers.parseEther("0.2"),  maxTickets: 5 },  // Regular
+      { priceWei: ethers.parseEther("0.05"), maxTickets: 10 }, // Economy
     ];
 
     await contract
       .connect(organiser)
       .createEvent(
-        "Multi-Tier Festival",
-        "Music",
         METADATA,
         future,
         500, // 5% royalty
@@ -131,21 +130,18 @@ describe("EventTicketNFT", function () {
         contract
           .connect(organiser)
           .createEvent(
-            "Concert",
-            "Music",
             METADATA,
             future,
             500,
             5,
-            singleSection("General", price, 100)
+            singleSection(price, 100)
           )
       )
         .to.emit(contract, "EventCreated")
         .withArgs(
           0,
           organiser.address,
-          "Concert",
-          "Music",
+          METADATA,
           future,
           1,      // sectionCount
           100,    // aggregate maxTickets
@@ -153,8 +149,6 @@ describe("EventTicketNFT", function () {
         );
 
       const ev = await getEv(contract, 0);
-      expect(ev.name).to.equal("Concert");
-      expect(ev.category).to.equal("Music");
       expect(ev.metadataURI).to.equal(METADATA);
       expect(ev.date).to.equal(future);
       expect(ev.priceWei).to.equal(price); // min price = only section
@@ -167,7 +161,6 @@ describe("EventTicketNFT", function () {
 
       expect(await contract.getSectionCount(0)).to.equal(1);
       const sec = await contract.getSection(0, 0);
-      expect(sec.name).to.equal("General");
       expect(sec.priceWei).to.equal(price);
       expect(sec.maxTickets).to.equal(100);
       expect(sec.ticketsSold).to.equal(0);
@@ -186,7 +179,6 @@ describe("EventTicketNFT", function () {
       const all = await contract.getSections(0);
       expect(all.length).to.equal(3);
       for (let i = 0; i < sections.length; i++) {
-        expect(all[i].name).to.equal(sections[i].name);
         expect(all[i].priceWei).to.equal(sections[i].priceWei);
         expect(all[i].maxTickets).to.equal(sections[i].maxTickets);
         expect(all[i].ticketsSold).to.equal(0);
@@ -196,27 +188,27 @@ describe("EventTicketNFT", function () {
     it("emits SectionCreated for each section", async function () {
       const { contract, organiser, future } = await loadFixture(deployFixture);
       const sections = [
-        { name: "A", priceWei: ethers.parseEther("0.1"), maxTickets: 5 },
-        { name: "B", priceWei: ethers.parseEther("0.2"), maxTickets: 10 },
+        { priceWei: ethers.parseEther("0.1"), maxTickets: 5 },
+        { priceWei: ethers.parseEther("0.2"), maxTickets: 10 },
       ];
       const tx = await contract
         .connect(organiser)
-        .createEvent("E", "Music", METADATA, future, 0, 2, sections);
+        .createEvent(METADATA, future, 0, 2, sections);
       await expect(tx)
         .to.emit(contract, "SectionCreated")
-        .withArgs(0, 0, "A", sections[0].priceWei, 5);
+        .withArgs(0, 0, sections[0].priceWei, 5);
       await expect(tx)
         .to.emit(contract, "SectionCreated")
-        .withArgs(0, 1, "B", sections[1].priceWei, 10);
+        .withArgs(0, 1, sections[1].priceWei, 10);
     });
 
-    it("reverts with empty name", async function () {
+    it("reverts with empty metadataURI", async function () {
       const { contract, organiser, future } = await loadFixture(deployFixture);
       await expect(
         contract
           .connect(organiser)
-          .createEvent("", "Music", METADATA, future, 500, 5, singleSection("G", 100, 10))
-      ).to.be.revertedWith("Name required");
+          .createEvent("", future, 500, 5, singleSection(100, 10))
+      ).to.be.revertedWith("metadataURI required");
     });
 
     it("reverts if date is in the past", async function () {
@@ -225,7 +217,7 @@ describe("EventTicketNFT", function () {
       await expect(
         contract
           .connect(organiser)
-          .createEvent("C", "Music", METADATA, past, 500, 5, singleSection("G", 100, 10))
+          .createEvent(METADATA, past, 500, 5, singleSection(100, 10))
       ).to.be.revertedWith("Event must be at least 1 day in the future");
     });
 
@@ -235,7 +227,7 @@ describe("EventTicketNFT", function () {
       await expect(
         contract
           .connect(organiser)
-          .createEvent("C", "Music", METADATA, soon, 500, 5, singleSection("G", 100, 10))
+          .createEvent(METADATA, soon, 500, 5, singleSection(100, 10))
       ).to.be.revertedWith("Event must be at least 1 day in the future");
     });
 
@@ -244,7 +236,7 @@ describe("EventTicketNFT", function () {
       await expect(
         contract
           .connect(organiser)
-          .createEvent("C", "Music", METADATA, future, 500, 5, [])
+          .createEvent(METADATA, future, 500, 5, [])
       ).to.be.revertedWith("At least one section required");
     });
 
@@ -253,21 +245,10 @@ describe("EventTicketNFT", function () {
       await expect(
         contract
           .connect(organiser)
-          .createEvent("C", "Music", METADATA, future, 500, 5, [
-            { name: "G", priceWei: 100, maxTickets: 0 },
+          .createEvent(METADATA, future, 500, 5, [
+            { priceWei: 100, maxTickets: 0 },
           ])
       ).to.be.revertedWith("Section maxTickets must be > 0");
-    });
-
-    it("reverts if a section has empty name", async function () {
-      const { contract, organiser, future } = await loadFixture(deployFixture);
-      await expect(
-        contract
-          .connect(organiser)
-          .createEvent("C", "Music", METADATA, future, 500, 5, [
-            { name: "", priceWei: 100, maxTickets: 5 },
-          ])
-      ).to.be.revertedWith("Section name required");
     });
 
     it("reverts if royalty exceeds cap (5000 bps = 50%)", async function () {
@@ -275,7 +256,7 @@ describe("EventTicketNFT", function () {
       await expect(
         contract
           .connect(organiser)
-          .createEvent("C", "Music", METADATA, future, 5001, 5, singleSection("G", 100, 10))
+          .createEvent(METADATA, future, 5001, 5, singleSection(100, 10))
       ).to.be.revertedWith("Royalty exceeds cap");
     });
 
@@ -284,7 +265,7 @@ describe("EventTicketNFT", function () {
       await expect(
         contract
           .connect(organiser)
-          .createEvent("C", "Music", METADATA, future, 500, 0, singleSection("G", 100, 10))
+          .createEvent(METADATA, future, 500, 0, singleSection(100, 10))
       ).to.be.revertedWith("maxPerBuyer must be > 0");
     });
 
@@ -293,7 +274,7 @@ describe("EventTicketNFT", function () {
       await expect(
         contract
           .connect(organiser)
-          .createEvent("C", "Music", METADATA, future, 500, 9999, singleSection("G", 100, 10))
+          .createEvent(METADATA, future, 500, 9999, singleSection(100, 10))
       ).to.be.revertedWith("maxPerBuyer exceeds global cap");
     });
 
@@ -302,7 +283,7 @@ describe("EventTicketNFT", function () {
       for (let i = 0; i < 3; i++) {
         await contract
           .connect(organiser)
-          .createEvent(`E${i}`, "Music", METADATA, future, 500, 5, singleSection("G", 100, 10));
+          .createEvent(METADATA, future, 500, 5, singleSection(100, 10));
       }
       expect(await contract.getEventCount()).to.equal(3);
     });
@@ -361,7 +342,6 @@ describe("EventTicketNFT", function () {
       await contract.connect(buyer1).buyTicket(0, 1, { value: sections[1].priceWei });
       expect(await contract.tokenToSection(1)).to.equal(1);
       const sec = await contract.getSectionOfToken(1);
-      expect(sec.name).to.equal("Regular");
       expect(sec.priceWei).to.equal(sections[1].priceWei);
     });
 
@@ -700,9 +680,7 @@ describe("EventTicketNFT", function () {
         await expect(
           contract.connect(organiser).updateEvent(
             0,
-            "Winter Concert",
-            "Music",
-            METADATA,
+            METADATA_V2,
             newDate,
             500,   // 5 %
             2
@@ -712,7 +690,7 @@ describe("EventTicketNFT", function () {
           .withArgs(0, organiser.address);
 
         const ev = await getEv(contract, 0);
-        expect(ev.name).to.equal("Winter Concert");
+        expect(ev.metadataURI).to.equal(METADATA_V2);
         expect(ev.royaltyBps).to.equal(500);
         expect(ev.maxPerBuyer).to.equal(2);
         expect(ev.date).to.equal(newDate);
@@ -727,8 +705,6 @@ describe("EventTicketNFT", function () {
         await expect(
           contract.connect(organiser).updateEvent(
             0,
-            "Summer Concert",
-            "Music",
             METADATA,
             future,
             2000,   // different royalty → should revert
@@ -744,16 +720,20 @@ describe("EventTicketNFT", function () {
 
         await contract.connect(organiser).updateEvent(
           0,
-          "Summer Concert (New Name)",
-          "Music",
-          "ipfs://bafybeinew",
+          METADATA_V2,
           future,
           royaltyBps,
           3
         );
         const ev = await getEv(contract, 0);
-        expect(ev.name).to.equal("Summer Concert (New Name)");
-        expect(ev.metadataURI).to.equal("ipfs://bafybeinew");
+        expect(ev.metadataURI).to.equal(METADATA_V2);
+      });
+
+      it("rejects empty metadataURI", async function () {
+        const { contract, organiser, future } = await loadFixture(eventCreatedFixture);
+        await expect(
+          contract.connect(organiser).updateEvent(0, "", future, 1000, 3)
+        ).to.be.revertedWith("metadataURI required");
       });
 
       it("reverts for non-organiser", async function () {
@@ -761,8 +741,6 @@ describe("EventTicketNFT", function () {
         await expect(
           contract.connect(buyer1).updateEvent(
             0,
-            "Hijack",
-            "Music",
             METADATA,
             future,
             1000,
@@ -797,14 +775,14 @@ describe("EventTicketNFT", function () {
       const { contract, buyer1, price } = await loadFixture(eventCreatedFixture);
       await contract.connect(buyer1).buyTicket(0, 0, { value: price });
       const ev = await contract.getEventOfToken(1);
-      expect(ev.name).to.equal("Summer Concert");
+      expect(ev.metadataURI).to.equal(METADATA);
     });
 
     it("getSectionOfToken returns the section the ticket belongs to", async function () {
       const { contract, buyer1, sections } = await loadFixture(multiSectionFixture);
       await contract.connect(buyer1).buyTicket(0, 1, { value: sections[1].priceWei });
       const sec = await contract.getSectionOfToken(1);
-      expect(sec.name).to.equal("Regular");
+      expect(sec.priceWei).to.equal(sections[1].priceWei);
     });
 
     it("getActiveListings reflects additions/removals", async function () {

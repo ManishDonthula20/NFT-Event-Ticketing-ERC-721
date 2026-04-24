@@ -5,9 +5,9 @@ import { ToastProvider, useToast } from "./components/Toast";
 import { useWallet } from "./hooks/useWallet";
 import { useContract } from "./hooks/useContract";
 import { CurrencyProvider } from "./hooks/useCurrency";
-import { NETWORK_NAME, CHAIN_ID } from "./utils/contract";
 
-import Home from "./pages/Home";
+import Landing from "./pages/Landing";
+import Events from "./pages/Events";
 import EventDetails from "./pages/EventDetails";
 import MyTickets from "./pages/MyTickets";
 import Marketplace from "./pages/Marketplace";
@@ -25,7 +25,6 @@ function AppInner() {
   const [refreshKey, setRefreshKey] = useState(0);
   const bump = () => setRefreshKey((k) => k + 1);
 
-  // Refresh balance whenever refreshKey changes (post-tx).
   useEffect(() => {
     if (wallet.account) wallet.refreshBalance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -40,8 +39,7 @@ function AppInner() {
             {wallet.account && !wallet.isCorrectNetwork && (
               <div className="alert warn mb-24">
                 <span>
-                  Wrong network — please switch to <b>{NETWORK_NAME}</b> (chain id&nbsp;
-                  <span className="mono">{CHAIN_ID}</span>).
+                  Wrong network — please switch to the network BookYourShow is deployed on.
                 </span>
                 <button
                   className="btn btn-sm btn-accent"
@@ -56,7 +54,8 @@ function AppInner() {
               <div className="alert danger mb-24">{wallet.error}</div>
             )}
             <Routes>
-              <Route path="/" element={<Home contract={contract} refreshKey={refreshKey} />} />
+              <Route path="/" element={<Landing contract={contract} refreshKey={refreshKey} />} />
+              <Route path="/events" element={<Events contract={contract} refreshKey={refreshKey} />} />
               <Route path="/event/:id" element={
                 <EventDetails
                   contract={contract}
@@ -131,8 +130,8 @@ function AppInner() {
         </main>
         <footer className="footer">
           <div className="container footer-inner">
-            <span>Blockpass · NFT event ticketing</span>
-            <span className="mono">{NETWORK_NAME}</span>
+            <span>BookYourShow · NFT event ticketing</span>
+            <span className="muted">Made for the community.</span>
           </div>
         </footer>
       </div>
