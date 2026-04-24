@@ -69,6 +69,24 @@ export default function Organiser({ contract, account, isConnected, connect, toa
     if (!Number.isInteger(id) || id < 1) return toast.danger("Enter a valid token id.");
     try {
       setBusy(true);
+
+      // Client-side access control: only the event organiser (of the ticket's
+      // event) may check in. The contract enforces the same rule on-chain via
+      // `require(msg.sender == organiser || msg.sender == owner())`, but we
+      // surface it up-front so a wrong wallet never pays gas for a revert.
+      const evt = await contract.getEventOfToken(id);
+      if (!evt) {
+        toast.danger(`Unknown ticket #${id}. It may have been burned or never minted.`);
+        return;
+      }
+      if (!isSameAddress(evt.organiser, account)) {
+        toast.danger(
+          `Only the event organiser can check in this ticket. ` +
+          `Ticket #${id} belongs to event "${evt.name || `#${evt.id}`}".`
+        );
+        return;
+      }
+
       toast.pending(`Checking in ticket #${id}…`);
       await contract.invalidateTicket(id);
       toast.success(`Ticket #${id} checked in.`);
@@ -99,36 +117,39 @@ export default function Organiser({ contract, account, isConnected, connect, toa
         <h1>Manage your events</h1>
       </section>
 
-      <div className="section-header">
-        <div>
-          <h2>Check-in tool</h2>
-          <div className="aside">
-            Marks a ticket as checked in at the venue gate.
+      {myEvents.length > 0 && (
+        <div className="section-header">
+          <div>
+            <h2>Check-in tool</h2>
+            <div className="aside">
+              Marks a ticket as checked in at the venue gate. Only available
+              for tickets of events you organised.
+            </div>
           </div>
+          {!invalidating ? (
+            <button className="btn btn-ghost btn-sm" onClick={() => setInvalidating(true)}>
+              Check in ticket
+            </button>
+          ) : (
+            <div className="flex gap-8 items-center">
+              <input
+                className="field"
+                style={{padding: "8px 12px", border: "1px solid var(--border-strong)", borderRadius: 6, fontSize: 13, width: 140}}
+                type="number"
+                placeholder="token id"
+                value={tokenIdInput}
+                onChange={(e) => setTokenIdInput(e.target.value)}
+              />
+              <button className="btn btn-danger btn-sm" onClick={handleInvalidate} disabled={busy}>
+                Confirm
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setInvalidating(false); setTokenIdInput(""); }}>
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
-        {!invalidating ? (
-          <button className="btn btn-ghost btn-sm" onClick={() => setInvalidating(true)}>
-            Check in ticket
-          </button>
-        ) : (
-          <div className="flex gap-8 items-center">
-            <input
-              className="field"
-              style={{padding: "8px 12px", border: "1px solid var(--border-strong)", borderRadius: 6, fontSize: 13, width: 140}}
-              type="number"
-              placeholder="token id"
-              value={tokenIdInput}
-              onChange={(e) => setTokenIdInput(e.target.value)}
-            />
-            <button className="btn btn-danger btn-sm" onClick={handleInvalidate} disabled={busy}>
-              Confirm
-            </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => { setInvalidating(false); setTokenIdInput(""); }}>
-              Cancel
-            </button>
-          </div>
-        )}
-      </div>
+      )}
 
       <div className="section-header mt-32">
         <div>
