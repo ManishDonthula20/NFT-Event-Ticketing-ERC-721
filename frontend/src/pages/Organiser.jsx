@@ -12,11 +12,12 @@ import {
 
 export default function Organiser({ contract, account, isConnected, connect, toast, refreshKey, bump }) {
   const { events, loading, refetch } = useEvents(contract, refreshKey);
-  const [addingTo, setAddingTo] = useState(null);
+  const [addingTo, setAddingTo] = useState(null); // { eventId, sectionId } | null
   const [addAmount, setAddAmount] = useState("");
   const [invalidating, setInvalidating] = useState(false);
   const [tokenIdInput, setTokenIdInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [expandedEvent, setExpandedEvent] = useState(null);
 
   const myEvents = useMemo(
     () => events.filter((e) => isSameAddress(e.organiser, account)),
@@ -25,13 +26,18 @@ export default function Organiser({ contract, account, isConnected, connect, toa
 
   const refresh = () => { refetch(); bump?.(); };
 
-  const handleAddTickets = async (eventId) => {
+  const handleAddTickets = async () => {
+    if (!addingTo) return;
     const n = parseInt(addAmount, 10);
     if (!n || n < 1) return toast.danger("Enter a positive integer.");
     try {
       setBusy(true);
       toast.pending(`Adding ${n} tickets…`);
-      await contract.addTickets(eventId, n);
+      await contract.addTicketsToSection(
+        addingTo.eventId,
+        addingTo.sectionId,
+        n
+      );
       toast.success(`${n} tickets added.`);
       setAddingTo(null);
       setAddAmount("");
@@ -143,88 +149,125 @@ export default function Organiser({ contract, account, isConnected, connect, toa
           <Link to="/create" className="btn btn-primary">Create event</Link>
         </div>
       ) : (
-        <div className="table-wrap">
-          <table className="data">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Event</th>
-                <th>Date</th>
-                <th className="right">Price</th>
-                <th className="right">Sold</th>
-                <th className="right">Royalty</th>
-                <th>Status</th>
-                <th className="right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {myEvents.map((e) => {
-                const expired = isPast(e.date);
-                return (
-                  <tr key={e.id}>
-                    <td className="mono muted">{e.id}</td>
-                    <td>
+        <div className="flex-col gap-16">
+          {myEvents.map((e) => {
+            const expired = isPast(e.date);
+            const isExpanded = expandedEvent === e.id;
+            return (
+              <div key={e.id} className="card">
+                <div className="flex justify-between items-center" style={{gap: 12, flexWrap: "wrap"}}>
+                  <div style={{minWidth: 0}}>
+                    <div className="flex items-center gap-8" style={{flexWrap: "wrap"}}>
+                      <span className="tag neutral mono">#{e.id}</span>
                       <Link to={`/event/${e.id}`}><b>{e.name}</b></Link>
-                      <div className="muted" style={{fontSize: 12}}>{e.category}</div>
-                    </td>
-                    <td>{formatDate(e.date)}</td>
-                    <td className="right mono">{formatETH(e.priceWei)} ETH</td>
-                    <td className="right mono">{e.ticketsSold} / {e.maxTickets}</td>
-                    <td className="right mono">{bpsToPercent(e.royaltyBps)}%</td>
-                    <td>
                       {e.cancelled
                         ? <span className="tag red">Cancelled</span>
                         : expired
                         ? <span className="tag neutral">Past</span>
                         : <span className="tag green">Live</span>}
-                    </td>
-                    <td className="right">
-                      <div className="flex gap-8" style={{justifyContent: "flex-end", flexWrap: "wrap"}}>
-                        {addingTo === e.id ? (
-                          <>
-                            <input
-                              type="number"
-                              min="1"
-                              style={{padding: "6px 10px", border: "1px solid var(--border-strong)", borderRadius: 4, fontSize: 12, width: 70}}
-                              value={addAmount}
-                              onChange={(ev) => setAddAmount(ev.target.value)}
-                              placeholder="count"
-                            />
-                            <button className="btn btn-sm btn-accent" onClick={() => handleAddTickets(e.id)} disabled={busy}>OK</button>
-                            <button className="btn btn-sm btn-ghost" onClick={() => { setAddingTo(null); setAddAmount(""); }}>✕</button>
-                          </>
-                        ) : (
-                          <>
-                            <Link
-                              to={`/organise/edit/${e.id}`}
-                              className="btn btn-sm btn-ghost"
-                              style={e.cancelled || expired ? {pointerEvents: "none", opacity: 0.5} : undefined}
-                            >
-                              Edit
-                            </Link>
-                            <button
-                              className="btn btn-sm btn-ghost"
-                              onClick={() => setAddingTo(e.id)}
-                              disabled={e.cancelled || expired}
-                            >
-                              Add tickets
-                            </button>
-                            <button
-                              className="btn btn-sm btn-danger"
-                              onClick={() => handleCancelEvent(e.id)}
-                              disabled={e.cancelled || expired || busy}
-                            >
-                              Cancel
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </div>
+                    <div className="muted" style={{fontSize: 12, marginTop: 4}}>
+                      {e.category} · {formatDate(e.date)} · Royalty {bpsToPercent(e.royaltyBps)}% ·{" "}
+                      {e.sections?.length || 0} section{(e.sections?.length || 0) !== 1 ? "s" : ""} ·{" "}
+                      {e.ticketsSold}/{e.maxTickets} sold
+                    </div>
+                  </div>
+                  <div className="flex gap-8" style={{flexWrap: "wrap"}}>
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      onClick={() => setExpandedEvent(isExpanded ? null : e.id)}
+                    >
+                      {isExpanded ? "Hide sections" : "Manage sections"}
+                    </button>
+                    <Link
+                      to={`/organise/edit/${e.id}`}
+                      className="btn btn-sm btn-ghost"
+                      style={e.cancelled || expired ? {pointerEvents: "none", opacity: 0.5} : undefined}
+                    >
+                      Edit
+                    </Link>
+                    <button
+                      className="btn btn-sm btn-danger"
+                      onClick={() => handleCancelEvent(e.id)}
+                      disabled={e.cancelled || expired || busy}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+
+                {isExpanded && (
+                  <div className="mt-16" style={{borderTop: "1px solid var(--border)", paddingTop: 12}}>
+                    <h3 style={{fontSize: 14, marginBottom: 10}}>Sections</h3>
+                    <div className="table-wrap">
+                      <table className="data">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>Name</th>
+                            <th className="right">Price</th>
+                            <th className="right">Sold</th>
+                            <th className="right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(e.sections || []).map((s) => {
+                            const editing =
+                              addingTo &&
+                              addingTo.eventId === e.id &&
+                              addingTo.sectionId === s.id;
+                            return (
+                              <tr key={s.id}>
+                                <td className="mono muted">{s.id}</td>
+                                <td><b>{s.name}</b></td>
+                                <td className="right mono">
+                                  {formatETH(s.priceWei)} ETH
+                                </td>
+                                <td className="right mono">
+                                  {s.ticketsSold} / {s.maxTickets}
+                                </td>
+                                <td className="right">
+                                  <div className="flex gap-8" style={{justifyContent: "flex-end", flexWrap: "wrap"}}>
+                                    {editing ? (
+                                      <>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          style={{padding: "6px 10px", border: "1px solid var(--border-strong)", borderRadius: 4, fontSize: 12, width: 80}}
+                                          value={addAmount}
+                                          onChange={(ev) => setAddAmount(ev.target.value)}
+                                          placeholder="count"
+                                        />
+                                        <button className="btn btn-sm btn-accent" onClick={handleAddTickets} disabled={busy}>OK</button>
+                                        <button
+                                          className="btn btn-sm btn-ghost"
+                                          onClick={() => { setAddingTo(null); setAddAmount(""); }}
+                                        >
+                                          ✕
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        className="btn btn-sm btn-ghost"
+                                        onClick={() => setAddingTo({ eventId: e.id, sectionId: s.id })}
+                                        disabled={e.cancelled || expired}
+                                      >
+                                        Add tickets
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

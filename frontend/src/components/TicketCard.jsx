@@ -15,7 +15,7 @@ export default function TicketCard({
   onAction,
   toast,
 }) {
-  const { tokenId, event, listing, valid } = ticket;
+  const { tokenId, event, section, listing, valid } = ticket;
   const rate = useInrRate();
   const [showListModal, setShowListModal] = useState(false);
   const [priceEth, setPriceEth] = useState("");
@@ -24,6 +24,9 @@ export default function TicketCard({
 
   const expired = isPast(event.date);
   const isListed = listing?.active;
+  // Section price tells the holder what they actually paid; fall back to the
+  // event-level aggregate if section data failed to load for some reason.
+  const paidPriceWei = section?.priceWei ?? event.priceWei;
 
   const handleList = async () => {
     try {
@@ -78,15 +81,21 @@ export default function TicketCard({
           {event.category} · {formatDate(event.date)}
         </p>
 
+        {section?.name && (
+          <div className="flex items-center gap-8 mt-8">
+            <span className="tag green">Section: {section.name}</span>
+          </div>
+        )}
+
         <div className="price-row mt-16">
           <span className="label">Paid</span>
           <span className="value">
-            {formatETH(event.priceWei)}
+            {formatETH(paidPriceWei)}
             <span className="unit">ETH</span>
           </span>
         </div>
         <div className="flex justify-end" style={{fontSize: 12, color: "var(--ink-500)"}}>
-          ≈ {formatINR(weiToInr(event.priceWei, rate))}
+          ≈ {formatINR(weiToInr(paidPriceWei, rate))}
         </div>
 
         {isListed && (

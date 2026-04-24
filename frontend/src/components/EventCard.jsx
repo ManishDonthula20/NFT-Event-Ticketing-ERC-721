@@ -55,12 +55,21 @@ export default function EventCard({ event }) {
       </div>
 
       <div className="price-row">
-        <span className="label">Ticket price</span>
+        <span className="label">
+          {event.sections && event.sections.length > 1 ? "From" : "Ticket price"}
+        </span>
         <span className="value">
           {formatETH(event.priceWei)}
           <span className="unit">ETH</span>
         </span>
       </div>
+
+      {event.sections && event.sections.length > 1 && (
+        <div className="muted" style={{fontSize: 12, marginTop: -6}}>
+          {event.sections.length} sections ·{" "}
+          {event.sections.map((s) => s.name).join(" · ")}
+        </div>
+      )}
 
       <div className="event-actions">
         <Link

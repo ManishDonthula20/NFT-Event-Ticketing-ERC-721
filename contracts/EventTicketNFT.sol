@@ -10,13 +10,23 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @title  EventTicketNFT
  * @author CS 218 — Team Minimalists
  * @notice NFT-based event ticketing system implementing ERC-721 ownership and
- *         ERC-2981 on-chain royalties. Includes an internal resale marketplace
- *         with royalty-deducting settlement, anti-scalping per-buyer caps,
- *         organiser check-in (invalidation), batch buying, and IPFS metadata.
+ *         ERC-2981 on-chain royalties. Events are divided into one or more
+ *         sections (e.g. "VIP", "Regular", "Economy") — each section carries
+ *         its own name, price, and supply of tickets. Buyers choose the
+ *         section they want at purchase time. Includes an internal resale
+ *         marketplace with royalty-deducting settlement, anti-scalping
+ *         per-buyer caps, organiser check-in (invalidation), batch buying,
+ *         and IPFS metadata.
  * @dev    All monetary amounts are in wei. Royalty is expressed in basis points
  *         (10_000 == 100%). Full NatSpec on every public/external function.
  *         Storage design keeps all heavy content off-chain: only an IPFS CID is
  *         stored per event; token URIs are derived from that CID + tokenId.
+ *
+ *         Top-level `EventInfo.priceWei` / `maxTickets` / `ticketsSold` are
+ *         maintained as aggregates over the event's sections:
+ *           - priceWei    = cheapest section's price (for "from X ETH" UI)
+ *           - maxTickets  = sum of every section's supply cap
+ *           - ticketsSold = sum of every section's running minted counter
  */
 contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable {
 
@@ -31,6 +41,11 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     /// @notice Maximum royalty that can be set (50 % of sale price).
     uint96 public constant MAX_ROYALTY_BPS = 5_000;
 
+    /// @notice Hard upper bound on the number of sections per event so a
+    ///         misbehaving organiser can't blow up gas with thousands of
+    ///         tiny sections.
+    uint256 public constant MAX_SECTIONS_PER_EVENT = 20;
+
     // ---------------------------------------------------------------------
     // Types
     // ---------------------------------------------------------------------
@@ -41,13 +56,29 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         string  category;      // e.g. "Music", "Sports"
         string  metadataURI;   // IPFS URI with description, banner, poster
         uint256 date;          // Unix timestamp; tickets cannot be bought past this
-        uint256 priceWei;      // Primary-sale price in wei
-        uint256 maxTickets;    // Hard supply cap
-        uint256 ticketsSold;   // Running counter of minted tickets
+        uint256 priceWei;      // Cheapest section's price (aggregate, display-only)
+        uint256 maxTickets;    // Hard supply cap (aggregate of all sections)
+        uint256 ticketsSold;   // Running counter (aggregate of all sections)
         uint96  royaltyBps;    // EIP-2981 royalty (basis points)
-        uint32  maxPerBuyer;   // Per-address purchase cap for this event
+        uint32  maxPerBuyer;   // Per-address purchase cap for this event (across sections)
         address organiser;     // Address that receives primary sale revenue + royalties
         bool    cancelled;     // If true, event cannot be purchased or resold
+    }
+
+    /// @notice A single division / seating tier on an event.
+    struct Section {
+        string  name;          // e.g. "VIP", "Regular", "Economy"
+        uint256 priceWei;      // Primary-sale price in wei for this section
+        uint256 maxTickets;    // Supply cap for this section
+        uint256 ticketsSold;   // Running counter for this section
+    }
+
+    /// @notice Input used when creating an event — mirrors `Section` without
+    ///         the `ticketsSold` counter (always starts at 0).
+    struct SectionInput {
+        string  name;
+        uint256 priceWei;
+        uint256 maxTickets;
     }
 
     /// @notice Resale-market listing for a ticket on the internal marketplace.
@@ -68,8 +99,14 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     /// @notice eventId → EventInfo
     mapping(uint256 => EventInfo) private _events;
 
+    /// @notice eventId → Section[] (one entry per division)
+    mapping(uint256 => Section[]) private _sections;
+
     /// @notice tokenId → eventId it belongs to
     mapping(uint256 => uint256) public tokenToEvent;
+
+    /// @notice tokenId → sectionId within that event
+    mapping(uint256 => uint256) public tokenToSection;
 
     /// @notice tokenId → is ticket still valid (organiser can invalidate on entry)
     mapping(uint256 => bool) public ticketValid;
@@ -79,7 +116,8 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
 
     /// @notice (buyer,eventId) → tickets purchased — anti-scalping accounting
     mapping(address => mapping(uint256 => uint256)) public ticketsOwnedByBuyer;
-    /// @notice (tokenid,timestamp) -> ticket purchased to time stamp until when it is valid, can be resold or bought only if the current timestamp is less than the timestamp until when it is valid. Create a view to show this i guess. we will check tmro.
+
+    /// @notice tokenId → event date, used for resale validity checks.
     mapping(uint256 => uint256) public validity;
 
     /// @notice Running list of active resale listings (tokenIds) for cheap enumeration.
@@ -96,15 +134,24 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         string name,
         string category,
         uint256 date,
-        uint256 priceWei,
+        uint256 sectionCount,
         uint256 maxTickets,
         uint96  royaltyBps
+    );
+
+    event SectionCreated(
+        uint256 indexed eventId,
+        uint256 indexed sectionId,
+        string name,
+        uint256 priceWei,
+        uint256 maxTickets
     );
 
     event TicketMinted(
         uint256 indexed tokenId,
         uint256 indexed eventId,
-        address indexed buyer,
+        uint256 indexed sectionId,
+        address buyer,
         uint256 pricePaid
     );
 
@@ -129,7 +176,13 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
 
     event EventCancelled(uint256 indexed eventId, address indexed organiser);
 
-    event TicketsAdded(uint256 indexed eventId, uint256 addedAmount, uint256 newTotal);
+    event TicketsAddedToSection(
+        uint256 indexed eventId,
+        uint256 indexed sectionId,
+        uint256 addedAmount,
+        uint256 newSectionTotal,
+        uint256 newEventTotal
+    );
 
     event EventUpdated(uint256 indexed eventId, address indexed organiser);
 
@@ -159,19 +212,21 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     // =====================================================================
 
     /**
-     * @notice Creates a new event. Any address can call; the caller becomes the
-     *         organiser for that event and will receive primary-sale revenue
-     *         plus EIP-2981 royalties from resales.
+     * @notice Creates a new event divided into one or more sections. Any
+     *         address can call; the caller becomes the organiser for that
+     *         event and will receive primary-sale revenue plus EIP-2981
+     *         royalties from resales.
+     * @dev    At least one section is required. Each section carries its own
+     *         name, price and supply. The event-level `priceWei` is stored as
+     *         the cheapest section's price for UI purposes only.
      * @param  name         Human-readable title of the event.
      * @param  category     Short category label (used by frontend filter).
      * @param  metadataURI  IPFS URI (e.g. "ipfs://<CID>") pointing to JSON with
-     *                      description, banner image URL, location, etc. The
-     *                      image/description itself MUST NOT be stored on-chain.
-     * @param  date         Unix timestamp of the event; must be in the future.
-     * @param  priceWei     Primary-sale price in wei (may be zero for free events).
-     * @param  maxTickets   Hard supply cap; must be > 0.
+     *                      description, banner image URL, location, etc.
+     * @param  date         Unix timestamp of the event; must be > now + 1 day.
      * @param  royaltyBps   EIP-2981 royalty share in basis points (≤ MAX_ROYALTY_BPS).
-     * @param  maxPerBuyer  Per-address purchase cap; capped by GLOBAL_MAX_PER_BUYER.
+     * @param  maxPerBuyer  Per-address purchase cap across all sections.
+     * @param  sections     Array of sections (name/priceWei/maxTickets each).
      * @return eventId      The numeric id assigned to the newly created event.
      */
     function createEvent(
@@ -179,33 +234,56 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         string calldata category,
         string calldata metadataURI,
         uint256 date,
-        uint256 priceWei,
-        uint256 maxTickets,
         uint96  royaltyBps,
-        uint32  maxPerBuyer
+        uint32  maxPerBuyer,
+        SectionInput[] calldata sections
     ) external returns (uint256 eventId) {
         require(bytes(name).length != 0, "Name required");
         // Enforce at least a 24h lead-time so buyers have a chance to react and
         // to prevent "create-and-drain" flash events.
         require(date > block.timestamp + 1 days, "Event must be at least 1 day in the future");
-        require(maxTickets > 0, "maxTickets must be > 0");
         require(royaltyBps <= MAX_ROYALTY_BPS, "Royalty exceeds cap");
         require(maxPerBuyer > 0, "maxPerBuyer must be > 0");
         // Hard-fail instead of silently clamping: the organiser should know
         // exactly what cap is applied to their event.
         require(maxPerBuyer <= GLOBAL_MAX_PER_BUYER, "maxPerBuyer exceeds global cap");
+        require(sections.length > 0, "At least one section required");
+        require(sections.length <= MAX_SECTIONS_PER_EVENT, "Too many sections");
 
         eventId = _eventIdCounter;
         // Safe: uint256 cannot realistically overflow from this increment.
         unchecked { _eventIdCounter = eventId + 1; }
+
+        uint256 totalMax;
+        uint256 minPrice = type(uint256).max;
+        Section[] storage secArr = _sections[eventId];
+
+        for (uint256 i = 0; i < sections.length; ) {
+            SectionInput calldata s = sections[i];
+            require(bytes(s.name).length != 0, "Section name required");
+            require(s.maxTickets > 0, "Section maxTickets must be > 0");
+
+            secArr.push(Section({
+                name:        s.name,
+                priceWei:    s.priceWei,
+                maxTickets:  s.maxTickets,
+                ticketsSold: 0
+            }));
+
+            emit SectionCreated(eventId, i, s.name, s.priceWei, s.maxTickets);
+
+            totalMax += s.maxTickets;
+            if (s.priceWei < minPrice) minPrice = s.priceWei;
+            unchecked { ++i; }
+        }
 
         _events[eventId] = EventInfo({
             name:         name,
             category:     category,
             metadataURI:  metadataURI,
             date:         date,
-            priceWei:     priceWei,
-            maxTickets:   maxTickets,
+            priceWei:     minPrice,
+            maxTickets:   totalMax,
             ticketsSold:  0,
             royaltyBps:   royaltyBps,
             maxPerBuyer:  maxPerBuyer,
@@ -219,30 +297,25 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
             name,
             category,
             date,
-            priceWei,
-            maxTickets,
+            sections.length,
+            totalMax,
             royaltyBps
         );
     }
 
     /**
-     * @notice Updates editable fields on an existing event. Organiser-only.
+     * @notice Updates the editable event-level fields (name, category,
+     *         metadata, date, royalty, per-buyer cap). Section prices and
+     *         supplies are managed separately via `addTicketsToSection` and
+     *         are not touched here.
      * @dev    Safety rules:
      *          - `name` / `category` / `metadataURI` / `date` / `maxPerBuyer`
      *            are always editable (while the event is live and uncancelled).
-     *          - `priceWei` and `royaltyBps` may ONLY be changed while
-     *            `ticketsSold == 0`, otherwise we'd be rewriting terms on
-     *            existing holders mid-event (unfair and a griefing vector).
+     *          - `royaltyBps` may ONLY be changed while no ticket has been
+     *            sold, otherwise we'd rewrite terms on existing holders
+     *            mid-event (unfair and a griefing vector).
      *          - The organiser address is intentionally immutable — see the
      *            royalty design in `royaltyInfo`.
-     * @param  eventId         Id of the event to update.
-     * @param  name            New name (non-empty).
-     * @param  category        New category label.
-     * @param  metadataURI     New IPFS metadata URI.
-     * @param  newDate         New unix timestamp (> now + 1 day).
-     * @param  newPriceWei     New primary-sale price (ignored if tickets sold).
-     * @param  newRoyaltyBps   New royalty bps (ignored if tickets sold).
-     * @param  newMaxPerBuyer  New per-address cap (1 ≤ v ≤ GLOBAL_MAX_PER_BUYER).
      */
     function updateEvent(
         uint256 eventId,
@@ -250,7 +323,6 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         string calldata category,
         string calldata metadataURI,
         uint256 newDate,
-        uint256 newPriceWei,
         uint96  newRoyaltyBps,
         uint32  newMaxPerBuyer
     )
@@ -266,10 +338,9 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         require(newMaxPerBuyer > 0, "maxPerBuyer must be > 0");
         require(newMaxPerBuyer <= GLOBAL_MAX_PER_BUYER, "maxPerBuyer exceeds global cap");
 
-        if (ev.priceWei != newPriceWei || ev.royaltyBps != newRoyaltyBps) {
-            require(ev.ticketsSold == 0, "Price/royalty locked after first sale");
-            ev.priceWei    = newPriceWei;
-            ev.royaltyBps  = newRoyaltyBps;
+        if (ev.royaltyBps != newRoyaltyBps) {
+            require(ev.ticketsSold == 0, "Royalty locked after first sale");
+            ev.royaltyBps = newRoyaltyBps;
         }
 
         ev.name         = name;
@@ -282,11 +353,12 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     }
 
     /**
-     * @notice Increases the ticket supply for an event the caller organises.
-     * @param  eventId  Id of the event to extend.
-     * @param  amount   Number of additional tickets to make available (> 0).
+     * @notice Adds supply to an existing section of an event.
+     * @param  eventId   Id of the event to extend.
+     * @param  sectionId Index of the section within that event.
+     * @param  amount    Additional tickets to mint into that section (> 0).
      */
-    function addTickets(uint256 eventId, uint256 amount)
+    function addTicketsToSection(uint256 eventId, uint256 sectionId, uint256 amount)
         external
         eventExists(eventId)
         onlyOrganiser(eventId)
@@ -295,9 +367,13 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         EventInfo storage ev = _events[eventId];
         require(!ev.cancelled, "Event cancelled");
         require(block.timestamp < ev.date, "Event already finished");
+        require(sectionId < _sections[eventId].length, "Invalid section");
 
-        ev.maxTickets += amount;
-        emit TicketsAdded(eventId, amount, ev.maxTickets);
+        Section storage sec = _sections[eventId][sectionId];
+        sec.maxTickets += amount;
+        ev.maxTickets  += amount;
+
+        emit TicketsAddedToSection(eventId, sectionId, amount, sec.maxTickets, ev.maxTickets);
     }
 
     /**
@@ -306,8 +382,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
      *         trade them on the internal marketplace.
      * @dev    IMPORTANT: this does NOT refund past buyers. Primary-sale ETH
      *         is forwarded to the organiser at purchase time, so the contract
-     *         holds no funds to refund from. A refund flow would require an
-     *         escrow model (see docs/EXPLAINER.md §"Cancellations & refunds").
+     *         holds no funds to refund from.
      * @param  eventId Id of the event to cancel.
      */
     function cancelEvent(uint256 eventId)
@@ -344,32 +419,31 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     // =====================================================================
 
     /**
-     * @notice Purchases a single ticket for `eventId`. The caller must send at
-     *         least `priceWei`; excess is refunded.
-     * @dev    Thin wrapper over `_buy` so the single-ticket ABI stays intact.
-     *         Reentrancy-guarded because ETH leaves the contract.
-     * @param  eventId The event to buy a ticket for.
-     * @return tokenId The id of the freshly minted ERC-721 ticket.
+     * @notice Purchases a single ticket for `eventId` from a specific section.
+     *         The caller must send at least `section.priceWei`; excess is refunded.
+     * @param  eventId   The event to buy a ticket for.
+     * @param  sectionId Section (division) to buy from.
+     * @return tokenId   The id of the freshly minted ERC-721 ticket.
      */
-    function buyTicket(uint256 eventId)
+    function buyTicket(uint256 eventId, uint256 sectionId)
         external
         payable
         nonReentrant
         eventExists(eventId)
         returns (uint256 tokenId)
     {
-        tokenId = _buy(eventId, 1);
+        tokenId = _buy(eventId, sectionId, 1);
     }
 
     /**
-     * @notice Purchases multiple tickets for a single event in one transaction.
-     *         Respects both the global supply cap and per-buyer cap.
-     * @param  eventId  The event to buy tickets for.
-     * @param  quantity Number of tickets (>= 1).
+     * @notice Purchases multiple tickets from the same section in one tx.
+     * @param  eventId   The event to buy tickets for.
+     * @param  sectionId Section (division) to buy from.
+     * @param  quantity  Number of tickets (>= 1).
      * @return firstTokenId Id of the first minted ticket; subsequent tickets
      *                      are sequentially numbered.
      */
-    function buyMultipleTickets(uint256 eventId, uint256 quantity)
+    function buyMultipleTickets(uint256 eventId, uint256 sectionId, uint256 quantity)
         external
         payable
         nonReentrant
@@ -377,32 +451,26 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         returns (uint256 firstTokenId)
     {
         require(quantity > 0, "quantity must be > 0");
-        firstTokenId = _buy(eventId, quantity);
+        firstTokenId = _buy(eventId, sectionId, quantity);
     }
 
     /**
-     * @dev Shared primary-sale path used by both `buyTicket` (quantity = 1)
-     *      and `buyMultipleTickets`. Not `nonReentrant` itself — the public
-     *      entry points carry the guard. Uses checks-effects-interactions:
-     *      all state (mints, counters, URIs) is finalised inside
-     *      `_mintTicket` before any ETH is forwarded.
-     *
-     *      Excess ETH is refunded defensively: the front-end always sends
-     *      exact payment, but third-party callers (contracts, other UIs,
-     *      relayers) might not, and stuck ETH is a worse outcome than a
-     *      ~400 gas branch.
+     * @dev Shared primary-sale path. Not `nonReentrant` itself — the public
+     *      entry points carry the guard. Uses checks-effects-interactions.
      */
-    function _buy(uint256 eventId, uint256 quantity)
+    function _buy(uint256 eventId, uint256 sectionId, uint256 quantity)
         private
         returns (uint256 firstTokenId)
     {
         EventInfo storage ev = _events[eventId];
         _requirePurchasable(ev);
+        require(sectionId < _sections[eventId].length, "Invalid section");
 
-        uint256 unitPrice  = ev.priceWei;
+        Section storage sec = _sections[eventId][sectionId];
+        uint256 unitPrice  = sec.priceWei;
         uint256 totalPrice = unitPrice * quantity;
         require(msg.value >= totalPrice, "Insufficient payment");
-        require(ev.ticketsSold + quantity <= ev.maxTickets, "Not enough tickets");
+        require(sec.ticketsSold + quantity <= sec.maxTickets, "Not enough tickets in section");
         require(
             ticketsOwnedByBuyer[msg.sender][eventId] + quantity <= ev.maxPerBuyer,
             "Per-buyer cap exceeded"
@@ -410,9 +478,15 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
 
         firstTokenId = _tokenIdCounter + 1;
         for (uint256 i = 0; i < quantity; ) {
-            uint256 mintedId = _mintTicket(ev, eventId, msg.sender);
-            emit TicketMinted(mintedId, eventId, msg.sender, unitPrice);
+            uint256 mintedId = _mintTicket(ev, eventId, sectionId, msg.sender);
+            emit TicketMinted(mintedId, eventId, sectionId, msg.sender, unitPrice);
             unchecked { ++i; }
+        }
+
+        // Aggregate counters (effects done before ETH leaves the contract).
+        unchecked {
+            sec.ticketsSold += quantity;
+            ev.ticketsSold  += quantity;
         }
 
         if (totalPrice > 0) {
@@ -482,9 +556,6 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
      * @notice Purchases a ticket from the resale marketplace. The sale price
      *         is split: royaltyBps goes to the event organiser; the remainder
      *         goes to the seller. Excess ETH sent by the buyer is refunded.
-     * @dev    Reentrancy-guarded because ETH flows outward to three parties.
-     *         Uses checks-effects-interactions: state is finalised before
-     *         any external call.
      * @param  tokenId Ticket id to purchase.
      */
     function buyResaleTicket(uint256 tokenId) external payable nonReentrant {
@@ -511,7 +582,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         uint256 sellerAmt    = salePrice - royaltyAmt;
         address organiser    = ev.organiser;
 
-        // Effects (finalise state before any ETH leaves the contract).
+        // Effects.
         listing.active = false;
         _removeActiveListing(tokenId);
         _transfer(seller, msg.sender, tokenId);
@@ -539,17 +610,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     // =====================================================================
 
     /**
-     * @notice EIP-2981 implementation: returns the royalty recipient and amount
-     *         owed on a sale of `tokenId` at `salePrice`.
-     * @dev    `royaltyBps` is in basis points (10_000 == 100 %). For a sale
-     *         price of `S` with `B` bps, the royalty owed is `(S * B) / 10_000`.
-     *         EIP-2981 is advisory — external marketplaces may ignore it. The
-     *         internal `buyResaleTicket` path enforces the split on-chain, so
-     *         any sale routed through this contract cannot skip the royalty.
-     * @param  tokenId    The ticket token id.
-     * @param  salePrice  The sale price (wei) to compute royalty against.
-     * @return receiver       Address that should receive the royalty.
-     * @return royaltyAmount  Amount of wei owed as royalty.
+     * @notice EIP-2981 implementation.
      */
     function royaltyInfo(uint256 tokenId, uint256 salePrice)
         external
@@ -571,6 +632,49 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         returns (EventInfo memory)
     {
         return _events[eventId];
+    }
+
+    /// @notice Returns every section configured on an event.
+    function getSections(uint256 eventId)
+        external
+        view
+        eventExists(eventId)
+        returns (Section[] memory)
+    {
+        return _sections[eventId];
+    }
+
+    /// @notice Returns a single section by (eventId, sectionId).
+    function getSection(uint256 eventId, uint256 sectionId)
+        external
+        view
+        eventExists(eventId)
+        returns (Section memory)
+    {
+        require(sectionId < _sections[eventId].length, "Invalid section");
+        return _sections[eventId][sectionId];
+    }
+
+    /// @notice Number of sections on an event.
+    function getSectionCount(uint256 eventId)
+        external
+        view
+        eventExists(eventId)
+        returns (uint256)
+    {
+        return _sections[eventId].length;
+    }
+
+    /// @notice Returns the section a particular ticket belongs to.
+    function getSectionOfToken(uint256 tokenId)
+        external
+        view
+        returns (Section memory)
+    {
+        require(_ownerOfSafe(tokenId) != address(0), "Token does not exist");
+        uint256 eventId = tokenToEvent[tokenId];
+        uint256 sectionId = tokenToSection[tokenId];
+        return _sections[eventId][sectionId];
     }
 
     /// @notice Returns total number of events created.
@@ -663,27 +767,34 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         require(ev.ticketsSold < ev.maxTickets, "Event sold out");
     }
 
-    /// @dev Mints one ticket to `buyer` for `ev`/`eventId`; handles all
-    ///      counters and sets an IPFS-derived tokenURI.
-    function _mintTicket(EventInfo storage ev, uint256 eventId, address buyer)
+    /// @dev Mints one ticket to `buyer` for (`eventId`,`sectionId`). Does NOT
+    ///      increment per-section / per-event sold counters — the caller
+    ///      (`_buy`) does that in one batched write after the loop.
+    function _mintTicket(
+        EventInfo storage /*ev*/,
+        uint256 eventId,
+        uint256 sectionId,
+        address buyer
+    )
         private
         returns (uint256 tokenId)
     {
         tokenId = _tokenIdCounter + 1;
         unchecked {
             _tokenIdCounter = tokenId;
-            ev.ticketsSold += 1;
             ticketsOwnedByBuyer[buyer][eventId] += 1;
         }
-        tokenToEvent[tokenId] = eventId;
-        ticketValid[tokenId]  = true;
+        tokenToEvent[tokenId]   = eventId;
+        tokenToSection[tokenId] = sectionId;
+        ticketValid[tokenId]    = true;
 
         _safeMint(buyer, tokenId);
 
         // tokenURI = "<eventMetadataURI>/<tokenId>.json" — keeps content off-chain.
+        // Section info is recoverable on-chain via tokenToSection / getSectionOfToken.
         _setTokenURI(
             tokenId,
-            string(abi.encodePacked(ev.metadataURI, "/", _toString(tokenId), ".json"))
+            string(abi.encodePacked(_events[eventId].metadataURI, "/", _toString(tokenId), ".json"))
         );
     }
 

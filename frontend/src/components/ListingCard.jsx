@@ -15,6 +15,7 @@ import { useInrRate, weiToInr, formatINR } from "../hooks/useCurrency";
 export default function ListingCard({
   listing,
   event,
+  section,
   tokenId,
   seller,
   expiresAt,
@@ -60,6 +61,7 @@ export default function ListingCard({
       <h3 className="card-title" style={{marginBottom: 4}}>{event.name}</h3>
       <p className="muted" style={{fontSize: 13}}>
         {event.category} · {formatDate(event.date)}
+        {section?.name && <> · Section <b>{section.name}</b></>}
       </p>
 
       <div className="price-row mt-16">

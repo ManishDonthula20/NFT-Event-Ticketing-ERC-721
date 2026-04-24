@@ -46,6 +46,8 @@ async function hydrateTicket(tokenId, helpers) {
     getEventOfToken,
     getResaleListing,
     tokenToEvent,
+    tokenToSection,
+    getSectionOfToken,
     isTicketValid,
     ownerOf,
   } = helpers;
@@ -56,9 +58,11 @@ async function hydrateTicket(tokenId, helpers) {
     tokenToEvent(tokenId),
     isTicketValid(tokenId),
     ownerOf ? ownerOf(tokenId) : Promise.resolve(null),
+    tokenToSection ? tokenToSection(tokenId) : Promise.resolve(null),
+    getSectionOfToken ? getSectionOfToken(tokenId) : Promise.resolve(null),
   ]);
 
-  const [evR, lstR, evIdR, validR, ownerR] = results;
+  const [evR, lstR, evIdR, validR, ownerR, secIdR, secR] = results;
 
   // If even the event lookup failed, this ticket probably no longer exists
   // (e.g. token burned). Drop it — but keep going for the others.
@@ -74,6 +78,8 @@ async function hydrateTicket(tokenId, helpers) {
         : { seller: null, price: 0n, expiresAt: 0, active: false },
     valid: validR.status === "fulfilled" ? validR.value : true,
     owner: ownerR.status === "fulfilled" ? ownerR.value : null,
+    sectionId: secIdR.status === "fulfilled" ? secIdR.value : null,
+    section: secR.status === "fulfilled" ? secR.value : null,
   };
 }
 
@@ -96,6 +102,8 @@ export function useUserTickets(contractHook, account, refreshKey = 0) {
     getEventOfToken,
     getResaleListing,
     tokenToEvent,
+    tokenToSection,
+    getSectionOfToken,
     isTicketValid,
     ownerOf,
     readContract,
@@ -145,6 +153,8 @@ export function useUserTickets(contractHook, account, refreshKey = 0) {
               getEventOfToken,
               getResaleListing,
               tokenToEvent,
+              tokenToSection,
+              getSectionOfToken,
               isTicketValid,
               ownerOf,
             })
@@ -168,6 +178,8 @@ export function useUserTickets(contractHook, account, refreshKey = 0) {
     getEventOfToken,
     getResaleListing,
     tokenToEvent,
+    tokenToSection,
+    getSectionOfToken,
     isTicketValid,
     ownerOf,
   ]);
@@ -191,7 +203,9 @@ export function useListings(contractHook, refreshKey = 0) {
     getActiveListings,
     getResaleListing,
     getEventOfToken,
+    getSectionOfToken,
     tokenToEvent,
+    tokenToSection,
     ownerOf,
     readContract,
   } = contractHook;
@@ -212,8 +226,10 @@ export function useListings(contractHook, refreshKey = 0) {
             getEventOfToken(tokenId),
             tokenToEvent(tokenId),
             ownerOf(tokenId),
+            tokenToSection ? tokenToSection(tokenId) : Promise.resolve(null),
+            getSectionOfToken ? getSectionOfToken(tokenId) : Promise.resolve(null),
           ]);
-          const [lstR, evR, evIdR, ownR] = results;
+          const [lstR, evR, evIdR, ownR, secIdR, secR] = results;
           if (lstR.status !== "fulfilled" || !lstR.value?.active) return null;
           if (evR.status !== "fulfilled") return null;
           return {
@@ -222,6 +238,8 @@ export function useListings(contractHook, refreshKey = 0) {
             event: evR.value,
             listing: lstR.value,
             seller: ownR.status === "fulfilled" ? ownR.value : lstR.value.seller,
+            sectionId: secIdR.status === "fulfilled" ? secIdR.value : null,
+            section: secR.status === "fulfilled" ? secR.value : null,
           };
         })
       );
@@ -236,7 +254,9 @@ export function useListings(contractHook, refreshKey = 0) {
     getActiveListings,
     getResaleListing,
     getEventOfToken,
+    getSectionOfToken,
     tokenToEvent,
+    tokenToSection,
     ownerOf,
   ]);
 

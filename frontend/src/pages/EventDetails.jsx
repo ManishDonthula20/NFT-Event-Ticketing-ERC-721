@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   formatDate,
@@ -25,6 +25,7 @@ export default function EventDetails({ contract, account, isConnected, connect, 
   const [loading, setLoading] = useState(true);
   const [bought, setBought] = useState(0);
   const [quantity, setQuantity] = useState(1);
+  const [selectedSection, setSelectedSection] = useState(0);
   const [busy, setBusy] = useState(false);
 
   const { data: meta, loading: metaLoading } = useIpfsMetadata(event?.metadataURI);
@@ -49,6 +50,72 @@ export default function EventDetails({ contract, account, isConnected, connect, 
 
   useEffect(() => { load(); }, [load]);
 
+  // Pick the first section that still has tickets when the event loads or
+  // when the current selection runs out of inventory.
+  useEffect(() => {
+    if (!event?.sections?.length) return;
+    const available = event.sections.findIndex(
+      (s) => s.ticketsSold < s.maxTickets
+    );
+    const current = event.sections[selectedSection];
+    const currentAvail =
+      current && current.ticketsSold < current.maxTickets;
+    if (!currentAvail && available >= 0) {
+      setSelectedSection(available);
+      setQuantity(1);
+    }
+  }, [event, selectedSection]);
+
+  const section = event?.sections?.[selectedSection] || null;
+
+  const sectionRemaining = section
+    ? ticketsRemaining(section.maxTickets, section.ticketsSold)
+    : 0;
+  const eventRemaining = event
+    ? ticketsRemaining(event.maxTickets, event.ticketsSold)
+    : 0;
+  const expired = event ? isPast(event.date) : false;
+  const userCapLeft = event ? Math.max(0, event.maxPerBuyer - bought) : 0;
+  const maxBuyable = Math.min(userCapLeft, sectionRemaining);
+
+  const unitPrice = section ? BigInt(section.priceWei) : 0n;
+  const totalPriceWei = unitPrice * BigInt(quantity || 0);
+
+  // Keep quantity inside the [1, maxBuyable] window when switching sections.
+  useEffect(() => {
+    if (quantity > maxBuyable && maxBuyable >= 1) setQuantity(maxBuyable);
+    if (quantity < 1 && maxBuyable >= 1) setQuantity(1);
+  }, [maxBuyable, quantity]);
+
+  const handleBuy = async () => {
+    if (!isConnected) { await connect(); return; }
+    if (!section) return;
+    try {
+      setBusy(true);
+      toast.pending(
+        `Buying ${quantity} ${section.name} ticket${quantity > 1 ? "s" : ""}…`
+      );
+      if (quantity === 1) {
+        await contract.buyTicket(eventId, section.id, unitPrice);
+      } else {
+        await contract.buyMultipleTickets(
+          eventId,
+          section.id,
+          quantity,
+          unitPrice
+        );
+      }
+      toast.success("Ticket purchased. Check 'My Tickets'.");
+      bump?.();
+      navigate("/my-tickets");
+      return;
+    } catch (e) {
+      toast.danger(humanizeError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="card">
@@ -69,45 +136,20 @@ export default function EventDetails({ contract, account, isConnected, connect, 
     );
   }
 
-  const remaining = ticketsRemaining(event.maxTickets, event.ticketsSold);
-  const expired   = isPast(event.date);
-  const userCapLeft = Math.max(0, event.maxPerBuyer - bought);
-  const maxBuyable  = Math.min(userCapLeft, remaining);
-
-  const totalPriceWei = BigInt(event.priceWei) * BigInt(quantity);
-
-  const handleBuy = async () => {
-    if (!isConnected) { await connect(); return; }
-    try {
-      setBusy(true);
-      toast.pending(`Buying ${quantity} ticket${quantity > 1 ? "s" : ""}…`);
-      if (quantity === 1) {
-        await contract.buyTicket(eventId, event.priceWei);
-      } else {
-        await contract.buyMultipleTickets(eventId, quantity, event.priceWei);
-      }
-      toast.success("Ticket purchased. Check 'My Tickets'.");
-      bump?.();
-      navigate("/my-tickets");
-      return;
-    } catch (e) {
-      toast.danger(humanizeError(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const disabled =
     busy ||
     event.cancelled ||
     expired ||
-    remaining === 0 ||
+    !section ||
+    sectionRemaining === 0 ||
     userCapLeft === 0;
 
   let reason = null;
   if (event.cancelled) reason = "Event has been cancelled";
   else if (expired) reason = "Event date has passed";
-  else if (remaining === 0) reason = "Sold out";
+  else if (eventRemaining === 0) reason = "Sold out";
+  else if (!section) reason = "No sections available";
+  else if (sectionRemaining === 0) reason = "This section is sold out";
   else if (userCapLeft === 0) reason = "You have reached the per-buyer cap";
 
   return (
@@ -145,6 +187,58 @@ export default function EventDetails({ contract, account, isConnected, connect, 
           )}
 
           <div className="card">
+            <h2 style={{fontSize: "1.3rem", marginBottom: 12}}>Sections</h2>
+            <div className="aside" style={{marginBottom: 12}}>
+              Choose the section you'd like to buy from.
+            </div>
+            <div className="flex-col gap-8">
+              {event.sections?.map((s) => {
+                const remaining = ticketsRemaining(s.maxTickets, s.ticketsSold);
+                const isSoldOut = remaining === 0;
+                const selected = selectedSection === s.id;
+                return (
+                  <button
+                    type="button"
+                    key={s.id}
+                    className="card interactive"
+                    onClick={() => !isSoldOut && setSelectedSection(s.id)}
+                    disabled={isSoldOut || expired || event.cancelled}
+                    style={{
+                      textAlign: "left",
+                      padding: 14,
+                      border: selected
+                        ? "2px solid var(--accent, #6366f1)"
+                        : "1px solid var(--border)",
+                      opacity: isSoldOut ? 0.55 : 1,
+                      cursor: isSoldOut ? "not-allowed" : "pointer",
+                      background: selected ? "var(--surface-alt)" : "var(--surface)",
+                    }}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div style={{fontWeight: 600}}>{s.name}</div>
+                        <div className="muted" style={{fontSize: 12}}>
+                          {remaining} / {s.maxTickets} available
+                          {isSoldOut && " · sold out"}
+                        </div>
+                      </div>
+                      <div style={{textAlign: "right"}}>
+                        <div style={{fontFamily: "var(--serif)", fontSize: "1.1rem"}}>
+                          {formatETH(s.priceWei)}{" "}
+                          <span className="unit">ETH</span>
+                        </div>
+                        <div className="muted" style={{fontSize: 11}}>
+                          ≈ {formatINR(weiToInr(s.priceWei, rate))}
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="card">
             <h2 style={{fontSize: "1.3rem", marginBottom: 12}}>Details</h2>
             <dl className="mt-16" style={{display: "grid", gridTemplateColumns: "1fr 2fr", rowGap: 10, columnGap: 20, fontSize: 14}}>
               <dt className="muted">Date</dt>
@@ -154,7 +248,10 @@ export default function EventDetails({ contract, account, isConnected, connect, 
               <dt className="muted">Resale royalty</dt>
               <dd>{bpsToPercent(event.royaltyBps)}% to organiser</dd>
               <dt className="muted">Per-buyer limit</dt>
-              <dd>{event.maxPerBuyer} ticket{event.maxPerBuyer > 1 ? "s" : ""}</dd>
+              <dd>
+                {event.maxPerBuyer} ticket{event.maxPerBuyer > 1 ? "s" : ""}{" "}
+                <span className="muted">(across all sections)</span>
+              </dd>
               <dt className="muted">Organiser</dt>
               <dd className="mono" style={{fontSize: "0.9em"}}>{truncateAddress(event.organiser)}</dd>
               {event.metadataURI && (
@@ -192,17 +289,26 @@ export default function EventDetails({ contract, account, isConnected, connect, 
 
         {/* Right: purchase box */}
         <aside className="card" style={{position: "sticky", top: 90}}>
+          <div className="flex justify-between items-center mb-8">
+            <span className="muted" style={{fontSize: 12}}>Selected section</span>
+            <span className="tag neutral">{section?.name || "—"}</span>
+          </div>
           <div className="price-row" style={{borderTop: "none", paddingTop: 0}}>
             <span className="label">Price per ticket</span>
-            <span className="value">{formatETH(event.priceWei)}<span className="unit">ETH</span></span>
+            <span className="value">
+              {formatETH(unitPrice)}
+              <span className="unit">ETH</span>
+            </span>
           </div>
           <div className="flex justify-end" style={{fontSize: 12, color: "var(--ink-500)", marginTop: -4}}>
-            ≈ {formatINR(weiToInr(event.priceWei, rate))}
+            ≈ {formatINR(weiToInr(unitPrice, rate))}
           </div>
 
           <div className="flex justify-between mt-16 mb-8" style={{fontSize: 13}}>
-            <span className="muted">Available</span>
-            <span>{remaining} / {event.maxTickets}</span>
+            <span className="muted">Available in section</span>
+            <span>
+              {sectionRemaining} / {section?.maxTickets ?? 0}
+            </span>
           </div>
           <div className="flex justify-between mb-16" style={{fontSize: 13}}>
             <span className="muted">You can buy</span>
@@ -260,7 +366,7 @@ export default function EventDetails({ contract, account, isConnected, connect, 
               ? "Connect wallet to buy"
               : reason
               ? reason
-              : `Buy ${quantity > 1 ? quantity + " tickets" : "ticket"}`}
+              : `Buy ${quantity > 1 ? quantity + " " + section.name + " tickets" : section.name + " ticket"}`}
           </button>
 
           {isSameAddress(event.organiser, account) && (
@@ -279,8 +385,6 @@ export default function EventDetails({ contract, account, isConnected, connect, 
 
 /**
  * Poster banner that tries every public IPFS gateway before giving up.
- * We walk through the list on `onError` so a slow / failed primary
- * gateway quietly falls back to the next one.
  */
 function EventPoster({ metadataURI, meta, metaLoading, alt }) {
   const imageUri = meta?.image;
@@ -299,7 +403,6 @@ function EventPoster({ metadataURI, meta, metaLoading, alt }) {
   }
 
   if (!imageUri || failed || gateways.length === 0) {
-    // No image in metadata — nothing to render.
     return null;
   }
 

@@ -92,6 +92,7 @@ export default function Marketplace({ contract, account, isConnected, connect, t
               key={l.tokenId}
               tokenId={l.tokenId}
               event={l.event}
+              section={l.section}
               seller={l.listing.seller}
               price={l.listing.price}
               expiresAt={l.listing.expiresAt}

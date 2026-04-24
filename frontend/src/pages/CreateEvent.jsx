@@ -5,6 +5,10 @@ import { useInrRate, weiToInr, formatINR } from "../hooks/useCurrency";
 
 const CATEGORIES = ["Music", "Theatre", "Sports", "Conference", "Workshop", "Community", "Other"];
 
+// Default section preset shown on first render. Always at least one section
+// is required, so we seed a "General" tier the organiser can edit or remove.
+const defaultSection = () => ({ name: "General", priceEth: "", maxTickets: "100" });
+
 export default function CreateEvent({ contract, isConnected, connect, toast, bump }) {
   const navigate = useNavigate();
   const rate = useInrRate();
@@ -13,38 +17,89 @@ export default function CreateEvent({ contract, isConnected, connect, toast, bum
     category: "Music",
     metadataURI: "",
     date: "",
-    priceEth: "",
-    maxTickets: "100",
     royaltyPercent: "10",
     maxPerBuyer: "4",
   });
+  const [sections, setSections] = useState([defaultSection()]);
   const [busy, setBusy] = useState(false);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const priceInr = useMemo(() => {
-    if (!form.priceEth) return 0;
-    try { return weiToInr(parseETH(form.priceEth), rate); }
-    catch { return 0; }
-  }, [form.priceEth, rate]);
+  const setSectionField = (idx, key, value) => {
+    setSections((list) =>
+      list.map((s, i) => (i === idx ? { ...s, [key]: value } : s))
+    );
+  };
+
+  const addSection = () => {
+    setSections((list) => [
+      ...list,
+      { name: "", priceEth: "", maxTickets: "" },
+    ]);
+  };
+
+  const removeSection = (idx) => {
+    setSections((list) => (list.length <= 1 ? list : list.filter((_, i) => i !== idx)));
+  };
+
+  const cheapestPriceInr = useMemo(() => {
+    try {
+      const prices = sections
+        .map((s) => (s.priceEth ? parseETH(s.priceEth) : null))
+        .filter((p) => p !== null && p > 0n);
+      if (!prices.length) return 0;
+      const min = prices.reduce((a, b) => (a < b ? a : b));
+      return weiToInr(min, rate);
+    } catch {
+      return 0;
+    }
+  }, [sections, rate]);
+
+  const totalTickets = useMemo(
+    () =>
+      sections.reduce((acc, s) => {
+        const n = parseInt(s.maxTickets, 10);
+        return acc + (Number.isFinite(n) && n > 0 ? n : 0);
+      }, 0),
+    [sections]
+  );
 
   const submit = async (e) => {
     e.preventDefault();
     if (!isConnected) { await connect(); return; }
 
-    // Client-side validation mirroring the contract's require statements.
     if (!form.name.trim()) return toast.danger("Event name is required.");
     const dateUnix = Math.floor(new Date(form.date).getTime() / 1000);
     if (!dateUnix || dateUnix <= Math.floor(Date.now() / 1000))
       return toast.danger("Date must be in the future.");
-    const maxTickets = parseInt(form.maxTickets, 10);
-    if (!maxTickets || maxTickets < 1)
-      return toast.danger("Max tickets must be > 0.");
     const royaltyBps = percentToBps(parseFloat(form.royaltyPercent) || 0);
     if (royaltyBps > 5000) return toast.danger("Royalty cannot exceed 50%.");
     const maxPerBuyer = parseInt(form.maxPerBuyer, 10);
     if (!maxPerBuyer || maxPerBuyer < 1)
       return toast.danger("Max per buyer must be ≥ 1.");
+
+    if (!sections.length) return toast.danger("Add at least one section.");
+
+    const payloadSections = [];
+    for (let i = 0; i < sections.length; i++) {
+      const s = sections[i];
+      if (!s.name.trim())
+        return toast.danger(`Section ${i + 1}: name is required.`);
+      const max = parseInt(s.maxTickets, 10);
+      if (!max || max < 1)
+        return toast.danger(`Section "${s.name}": tickets must be ≥ 1.`);
+      let priceWei;
+      try {
+        priceWei = parseETH(s.priceEth || "0");
+      } catch {
+        return toast.danger(`Section "${s.name}": invalid price.`);
+      }
+      payloadSections.push({
+        name: s.name.trim(),
+        priceWei,
+        maxTickets: max,
+      });
+    }
 
     try {
       setBusy(true);
@@ -54,10 +109,9 @@ export default function CreateEvent({ contract, isConnected, connect, toast, bum
         category: form.category,
         metadataURI: form.metadataURI.trim(),
         date: dateUnix,
-        priceWei: parseETH(form.priceEth || "0"),
-        maxTickets,
         royaltyBps,
         maxPerBuyer,
+        sections: payloadSections,
       });
       toast.success("Event created successfully.");
       bump?.();
@@ -127,57 +181,6 @@ export default function CreateEvent({ contract, isConnected, connect, toast, bum
                 How to upload to IPFS →
               </a>
             </div>
-            <details style={{marginTop: 8, fontSize: 12, color: "var(--ink-500)"}}>
-              <summary style={{cursor: "pointer", fontWeight: 500}}>
-                Example metadata JSON
-              </summary>
-              <pre style={{
-                margin: "8px 0 0",
-                padding: 10,
-                background: "var(--surface-alt)",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius-sm)",
-                fontFamily: "var(--mono)",
-                fontSize: 11,
-                whiteSpace: "pre-wrap",
-                overflowX: "auto",
-              }}>
-{`{
-  "name": "Summer Synth Festival",
-  "description": "An open-air night of analog synths…",
-  "image": "ipfs://bafybeig…/poster.png",
-  "external_url": "https://mysite.com/event",
-  "attributes": [
-    { "trait_type": "Venue",  "value": "Riverside Grounds" },
-    { "trait_type": "Doors",  "value": "7:00 PM" },
-    { "trait_type": "Tier",   "value": "General Admission" }
-  ]
-}`}
-              </pre>
-            </details>
-          </div>
-
-          <div className="field">
-            <label>Ticket price (ETH)</label>
-            <input
-              type="number" min="0" step="0.0001"
-              value={form.priceEth}
-              onChange={set("priceEth")}
-              placeholder="0.05"
-            />
-            {priceInr > 0 && (
-              <div className="hint">≈ {formatINR(priceInr)}</div>
-            )}
-          </div>
-
-          <div className="field">
-            <label>Max tickets *</label>
-            <input
-              type="number" min="1" step="1"
-              value={form.maxTickets}
-              onChange={set("maxTickets")}
-              required
-            />
           </div>
 
           <div className="field">
@@ -187,7 +190,7 @@ export default function CreateEvent({ contract, isConnected, connect, toast, bum
               value={form.royaltyPercent}
               onChange={set("royaltyPercent")}
             />
-            <div className="hint">Max 50%.</div>
+            <div className="hint">Max 50%. Paid to you on every resale.</div>
           </div>
 
           <div className="field">
@@ -197,8 +200,102 @@ export default function CreateEvent({ contract, isConnected, connect, toast, bum
               value={form.maxPerBuyer}
               onChange={set("maxPerBuyer")}
             />
-            <div className="hint">Global ceiling: 10.</div>
+            <div className="hint">
+              Applies across all sections. Global ceiling: 10.
+            </div>
           </div>
+        </div>
+
+        <hr className="rule" />
+
+        <div className="section-header" style={{marginBottom: 12}}>
+          <div>
+            <h2 style={{fontSize: "1.2rem"}}>Sections</h2>
+            <div className="aside">
+              Split your event into divisions (e.g. VIP, Regular, Economy).
+              Each section has its own name, price and ticket count.
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={addSection}
+          >
+            + Add section
+          </button>
+        </div>
+
+        <div className="flex-col gap-12" style={{marginBottom: 16}}>
+          {sections.map((s, i) => {
+            let inrPerTicket = 0;
+            try {
+              if (s.priceEth) inrPerTicket = weiToInr(parseETH(s.priceEth), rate);
+            } catch { /* ignore */ }
+            return (
+              <div
+                key={i}
+                className="card"
+                style={{padding: 16, background: "var(--surface-alt)"}}
+              >
+                <div className="flex justify-between items-center" style={{marginBottom: 10}}>
+                  <span className="tag neutral">Section {i + 1}</span>
+                  {sections.length > 1 && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      onClick={() => removeSection(i)}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <div className="form-grid">
+                  <div className="field">
+                    <label>Name *</label>
+                    <input
+                      type="text"
+                      value={s.name}
+                      onChange={(e) => setSectionField(i, "name", e.target.value)}
+                      placeholder="VIP / Regular / Economy"
+                      required
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Price (ETH)</label>
+                    <input
+                      type="number" min="0" step="0.0001"
+                      value={s.priceEth}
+                      onChange={(e) => setSectionField(i, "priceEth", e.target.value)}
+                      placeholder="0.05"
+                    />
+                    {inrPerTicket > 0 && (
+                      <div className="hint">≈ {formatINR(inrPerTicket)}</div>
+                    )}
+                  </div>
+                  <div className="field">
+                    <label>Tickets in this section *</label>
+                    <input
+                      type="number" min="1" step="1"
+                      value={s.maxTickets}
+                      onChange={(e) => setSectionField(i, "maxTickets", e.target.value)}
+                      placeholder="100"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex justify-between items-center" style={{fontSize: 13, color: "var(--ink-500)"}}>
+          <span>
+            <b>{sections.length}</b> section{sections.length !== 1 ? "s" : ""} ·{" "}
+            <b>{totalTickets}</b> total tickets
+          </span>
+          {cheapestPriceInr > 0 && (
+            <span>from ≈ {formatINR(cheapestPriceInr)} / ticket</span>
+          )}
         </div>
 
         <hr className="rule" />

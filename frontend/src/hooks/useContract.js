@@ -35,13 +35,6 @@ export function useContract(signer, provider) {
 
   // -----------------------------------------------------------------------
   // Write functions
-  //
-  // Gas strategy: ethers v6 uses the raw eth_estimateGas result as the tx
-  // gas limit, which can leave only ~1–3% headroom. State that changes
-  // between estimation and mining (e.g. a zero→non-zero SSTORE that another
-  // tx already triggered) can then push real usage past the limit and
-  // cause an out-of-gas revert the sender still pays for. We estimate
-  // explicitly and add a 25% buffer before dispatching.
   // -----------------------------------------------------------------------
   const GAS_BUFFER_NUM = 125n;
   const GAS_BUFFER_DEN = 100n;
@@ -55,20 +48,11 @@ export function useContract(signer, provider) {
         const estimated = await fn.estimateGas(...args, overrides);
         gasLimit = (estimated * GAS_BUFFER_NUM) / GAS_BUFFER_DEN;
       } catch (estimateErr) {
-        // Some public RPCs strip revert reasons from estimateGas responses
-        // ("missing revert data"). Fall back to a read-only eth_call via
-        // staticCall, which on many providers DOES return the reason.
-        // Doing this before sending means the user sees a useful error
-        // instead of paying gas for an OOG-style failure in the wallet.
         try {
           await fn.staticCall(...args, overrides);
         } catch (staticErr) {
-          // staticCall usually surfaces err.revert.args[0] / err.reason
-          // with the actual require() string — let humanizeError pick it up.
           throw staticErr;
         }
-        // staticCall succeeded but estimateGas failed — highly unusual.
-        // Proceed without a manual gas limit and let the wallet estimate.
       }
       const finalOverrides = gasLimit ? { ...overrides, gasLimit } : overrides;
       return await fn(...args, finalOverrides);
@@ -78,15 +62,15 @@ export function useContract(signer, provider) {
 
   const createEvent = useCallback(
     async (params) => {
+      // params.sections: [{ name, priceWei, maxTickets }, ...]
       const tx = await sendWithGasBuffer("createEvent", [
         params.name,
         params.category,
         params.metadataURI,
         params.date,
-        params.priceWei,
-        params.maxTickets,
         params.royaltyBps,
         params.maxPerBuyer,
+        params.sections,
       ]);
       return await tx.wait();
     },
@@ -94,8 +78,8 @@ export function useContract(signer, provider) {
   );
 
   const buyTicket = useCallback(
-    async (eventId, priceWei) => {
-      const tx = await sendWithGasBuffer("buyTicket", [eventId], {
+    async (eventId, sectionId, priceWei) => {
+      const tx = await sendWithGasBuffer("buyTicket", [eventId, sectionId], {
         value: priceWei,
       });
       return await tx.wait();
@@ -104,11 +88,11 @@ export function useContract(signer, provider) {
   );
 
   const buyMultipleTickets = useCallback(
-    async (eventId, quantity, priceWei) => {
+    async (eventId, sectionId, quantity, priceWei) => {
       const totalPrice = BigInt(priceWei) * BigInt(quantity);
       const tx = await sendWithGasBuffer(
         "buyMultipleTickets",
-        [eventId, quantity],
+        [eventId, sectionId, quantity],
         { value: totalPrice }
       );
       return await tx.wait();
@@ -146,9 +130,13 @@ export function useContract(signer, provider) {
     [sendWithGasBuffer]
   );
 
-  const addTickets = useCallback(
-    async (eventId, amount) => {
-      const tx = await sendWithGasBuffer("addTickets", [eventId, amount]);
+  const addTicketsToSection = useCallback(
+    async (eventId, sectionId, amount) => {
+      const tx = await sendWithGasBuffer("addTicketsToSection", [
+        eventId,
+        sectionId,
+        amount,
+      ]);
       return await tx.wait();
     },
     [sendWithGasBuffer]
@@ -162,7 +150,6 @@ export function useContract(signer, provider) {
         params.category,
         params.metadataURI,
         params.date,
-        params.priceWei,
         params.royaltyBps,
         params.maxPerBuyer,
       ]);
@@ -190,25 +177,50 @@ export function useContract(signer, provider) {
   // -----------------------------------------------------------------------
   // Read functions — normalise BigInt → Number where appropriate
   // -----------------------------------------------------------------------
+  const normaliseSection = (s, index) => ({
+    id: index,
+    name: s.name,
+    priceWei: s.priceWei, // keep BigInt
+    maxTickets: Number(s.maxTickets),
+    ticketsSold: Number(s.ticketsSold),
+  });
+
   const getEvent = useCallback(
     async (eventId) => {
       if (!readContract) return null;
       const fn = readContract.getFunction("getEvent");
-      const ev = await fn(eventId);
+      const [ev, sections] = await Promise.all([
+        fn(eventId),
+        readContract.getSections(eventId).catch(() => []),
+      ]);
       return {
         id: Number(eventId),
         name: ev.name,
         category: ev.category,
         metadataURI: ev.metadataURI,
         date: Number(ev.date),
-        priceWei: ev.priceWei, // keep BigInt
+        priceWei: ev.priceWei, // min section price (aggregate)
         maxTickets: Number(ev.maxTickets),
         ticketsSold: Number(ev.ticketsSold),
         royaltyBps: Number(ev.royaltyBps),
         maxPerBuyer: Number(ev.maxPerBuyer),
         organiser: ev.organiser,
         cancelled: ev.cancelled,
+        sections: sections.map((s, i) => normaliseSection(s, i)),
       };
+    },
+    [readContract]
+  );
+
+  const getSections = useCallback(
+    async (eventId) => {
+      if (!readContract) return [];
+      try {
+        const arr = await readContract.getSections(eventId);
+        return arr.map((s, i) => normaliseSection(s, i));
+      } catch {
+        return [];
+      }
     },
     [readContract]
   );
@@ -252,56 +264,71 @@ export function useContract(signer, provider) {
     [readContract]
   );
 
+  const _fetchEventWithSections = useCallback(
+    async (eventId) => {
+      const [ev, sections] = await Promise.all([
+        readContract.getFunction("getEvent")(eventId),
+        readContract.getSections(eventId).catch(() => []),
+      ]);
+      return {
+        name: ev.name,
+        category: ev.category,
+        metadataURI: ev.metadataURI,
+        date: Number(ev.date),
+        priceWei: ev.priceWei,
+        maxTickets: Number(ev.maxTickets),
+        ticketsSold: Number(ev.ticketsSold),
+        royaltyBps: Number(ev.royaltyBps),
+        maxPerBuyer: Number(ev.maxPerBuyer),
+        organiser: ev.organiser,
+        cancelled: ev.cancelled,
+        sections: sections.map((s, i) => normaliseSection(s, i)),
+      };
+    },
+    [readContract]
+  );
+
   const getEventOfToken = useCallback(
     async (tokenId) => {
       if (!readContract) return null;
-      // If the token doesn't exist (e.g. burn or redeploy) the contract
-      // reverts; fall back to deriving the event from tokenToEvent so one
-      // stale id cannot break the whole MyTickets page.
+      // Prefer the direct getEventOfToken, but sections need a separate read.
+      // Fall back to tokenToEvent if the direct getter reverts (e.g. burn).
       try {
-        const ev = await readContract.getEventOfToken(tokenId);
-        return {
-          name: ev.name,
-          category: ev.category,
-          metadataURI: ev.metadataURI,
-          date: Number(ev.date),
-          priceWei: ev.priceWei,
-          maxTickets: Number(ev.maxTickets),
-          ticketsSold: Number(ev.ticketsSold),
-          royaltyBps: Number(ev.royaltyBps),
-          maxPerBuyer: Number(ev.maxPerBuyer),
-          organiser: ev.organiser,
-          cancelled: ev.cancelled,
-        };
+        const eventId = await readContract.tokenToEvent(tokenId);
+        return await _fetchEventWithSections(eventId);
       } catch {
-        try {
-          const eventId = await readContract.tokenToEvent(tokenId);
-          const ev = await readContract.getFunction("getEvent")(eventId);
-          return {
-            name: ev.name,
-            category: ev.category,
-            metadataURI: ev.metadataURI,
-            date: Number(ev.date),
-            priceWei: ev.priceWei,
-            maxTickets: Number(ev.maxTickets),
-            ticketsSold: Number(ev.ticketsSold),
-            royaltyBps: Number(ev.royaltyBps),
-            maxPerBuyer: Number(ev.maxPerBuyer),
-            organiser: ev.organiser,
-            cancelled: ev.cancelled,
-          };
-        } catch {
-          return null;
-        }
+        return null;
       }
     },
-    [readContract]
+    [readContract, _fetchEventWithSections]
   );
 
   const tokenToEvent = useCallback(
     async (tokenId) => {
       if (!readContract) return null;
       return Number(await readContract.tokenToEvent(tokenId));
+    },
+    [readContract]
+  );
+
+  const tokenToSection = useCallback(
+    async (tokenId) => {
+      if (!readContract) return null;
+      return Number(await readContract.tokenToSection(tokenId));
+    },
+    [readContract]
+  );
+
+  const getSectionOfToken = useCallback(
+    async (tokenId) => {
+      if (!readContract) return null;
+      try {
+        const s = await readContract.getSectionOfToken(tokenId);
+        const id = await readContract.tokenToSection(tokenId);
+        return normaliseSection(s, Number(id));
+      } catch {
+        return null;
+      }
     },
     [readContract]
   );
@@ -340,19 +367,22 @@ export function useContract(signer, provider) {
     listForResale,
     cancelResaleListing,
     buyResaleTicket,
-    addTickets,
+    addTicketsToSection,
     updateEvent,
     cancelEvent,
     invalidateTicket,
     // reads
     getEvent,
+    getSections,
     getEventCount,
     getTokenCount,
     getActiveListings,
     getResaleListing,
     getTicketsOfUser,
     getEventOfToken,
+    getSectionOfToken,
     tokenToEvent,
+    tokenToSection,
     ownerOf,
     isTicketValid,
     ticketsBoughtBy,

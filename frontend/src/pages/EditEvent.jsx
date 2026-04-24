@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
-  parseETH,
   formatETH,
   percentToBps,
   bpsToPercent,
   humanizeError,
   isSameAddress,
 } from "../utils/helpers";
-import { useInrRate, weiToInr, formatINR } from "../hooks/useCurrency";
 
 const CATEGORIES = [
   "Music", "Theatre", "Sports", "Conference", "Workshop", "Community", "Other",
@@ -32,7 +30,6 @@ export default function EditEvent({ contract, account, isConnected, connect, toa
   const { id } = useParams();
   const eventId = Number(id);
   const navigate = useNavigate();
-  const rate = useInrRate();
 
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -50,7 +47,6 @@ export default function EditEvent({ contract, account, isConnected, connect, toa
           category: ev.category || "Music",
           metadataURI: ev.metadataURI || "",
           date: unixToLocalInput(ev.date),
-          priceEth: formatETH(ev.priceWei, 6),
           royaltyPercent: String(bpsToPercent(ev.royaltyBps)),
           maxPerBuyer: String(ev.maxPerBuyer),
         });
@@ -66,20 +62,10 @@ export default function EditEvent({ contract, account, isConnected, connect, toa
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const priceLocked = useMemo(
+  const royaltyLocked = useMemo(
     () => (event ? event.ticketsSold > 0 : false),
     [event]
   );
-
-  const inrPerTicket = useMemo(() => {
-    if (!form?.priceEth) return 0;
-    try {
-      const wei = parseETH(form.priceEth);
-      return weiToInr(wei, rate);
-    } catch {
-      return 0;
-    }
-  }, [form?.priceEth, rate]);
 
   if (!isConnected) {
     return (
@@ -140,80 +126,31 @@ export default function EditEvent({ contract, account, isConnected, connect, toa
     if (!maxPerBuyer || maxPerBuyer < 1)
       return toast.danger("Max per buyer must be ≥ 1.");
 
-    // Price & royalty are locked on-chain once any ticket is sold (see
-    // EventTicketNFT.updateEvent — it reverts with
-    // "Price/royalty locked after first sale" whenever the submitted
-    // values don't match storage bit-for-bit). The form displays them
-    // via formatETH(..., 6) + bpsToPercent, which is a lossy float
-    // round-trip. Re-using the original BigInt/number from state
-    // guarantees the values we submit are byte-identical to storage,
-    // so the "if changed" branch in the contract never fires.
-    let priceWei;
+    // Royalty is locked on-chain once any ticket is sold. Re-submit the
+    // original BigInt so the contract's "if changed" branch never fires.
     let royaltyBps;
-    if (priceLocked) {
-      priceWei = event.priceWei;
+    if (royaltyLocked) {
       royaltyBps = event.royaltyBps;
     } else {
-      priceWei = parseETH(form.priceEth || "0");
       royaltyBps = percentToBps(parseFloat(form.royaltyPercent) || 0);
       if (royaltyBps > 5000) return toast.danger("Royalty cannot exceed 50%.");
     }
 
-    const payload = {
-      name: form.name.trim(),
-      category: form.category,
-      metadataURI: form.metadataURI.trim(),
-      date: dateUnix,
-      priceWei,
-      royaltyBps,
-      maxPerBuyer,
-    };
-
-    // Diagnostic trace: when public RPCs strip revert reasons we want to be
-    // able to eyeball every submitted vs on-chain value in the console.
-    // Printed one per line so a single screenshot captures everything.
-    /* eslint-disable no-console */
-    console.log("========== [updateEvent] DEBUG ==========");
-    console.log("eventId:            ", eventId);
-    console.log("connectedAccount:   ", account);
-    console.log("on-chain organiser: ", event.organiser);
-    console.log("organiser matches?  ", isSameAddress(event.organiser, account));
-    console.log("on-chain cancelled: ", event.cancelled);
-    console.log("on-chain ticketsSold:", event.ticketsSold);
-    console.log("priceLocked:        ", priceLocked);
-    console.log("-- submitted --");
-    console.log("  name:         ", JSON.stringify(payload.name));
-    console.log("  category:     ", JSON.stringify(payload.category));
-    console.log("  metadataURI:  ", JSON.stringify(payload.metadataURI));
-    console.log("  date (unix):  ", payload.date, "=", new Date(payload.date * 1000).toISOString());
-    console.log("  priceWei:     ", payload.priceWei?.toString?.() ?? payload.priceWei);
-    console.log("  royaltyBps:   ", payload.royaltyBps);
-    console.log("  maxPerBuyer:  ", payload.maxPerBuyer);
-    console.log("-- on-chain --");
-    console.log("  name:         ", JSON.stringify(event.name));
-    console.log("  category:     ", JSON.stringify(event.category));
-    console.log("  metadataURI:  ", JSON.stringify(event.metadataURI));
-    console.log("  date (unix):  ", event.date, "=", new Date(event.date * 1000).toISOString());
-    console.log("  priceWei:     ", event.priceWei?.toString?.());
-    console.log("  royaltyBps:   ", event.royaltyBps);
-    console.log("  maxPerBuyer:  ", event.maxPerBuyer);
-    console.log("  maxTickets:   ", event.maxTickets);
-    console.log("-- time sanity --");
-    console.log("  now (unix):      ", Math.floor(Date.now() / 1000));
-    console.log("  submitted > now+1d?", payload.date > Math.floor(Date.now() / 1000) + 86400);
-    console.log("=========================================");
-    /* eslint-enable no-console */
-
     try {
       setBusy(true);
       toast.pending("Updating event…");
-      await contract.updateEvent(eventId, payload);
+      await contract.updateEvent(eventId, {
+        name: form.name.trim(),
+        category: form.category,
+        metadataURI: form.metadataURI.trim(),
+        date: dateUnix,
+        royaltyBps,
+        maxPerBuyer,
+      });
       toast.success("Event updated.");
       bump?.();
       navigate("/organise");
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("[updateEvent] failed", err);
       toast.danger(humanizeError(err));
     } finally {
       setBusy(false);
@@ -259,30 +196,14 @@ export default function EditEvent({ contract, account, isConnected, connect, toa
           </div>
 
           <div className="field">
-            <label>Ticket price (ETH) {priceLocked && <span className="muted">· locked</span>}</label>
-            <input
-              type="number" min="0" step="0.0001"
-              value={form.priceEth}
-              onChange={set("priceEth")}
-              disabled={priceLocked}
-            />
-            {!priceLocked && inrPerTicket > 0 && (
-              <div className="hint">≈ {formatINR(inrPerTicket)}</div>
-            )}
-            {priceLocked && (
-              <div className="hint">Price cannot change after the first ticket is sold.</div>
-            )}
-          </div>
-
-          <div className="field">
-            <label>Royalty (%) {priceLocked && <span className="muted">· locked</span>}</label>
+            <label>Royalty (%) {royaltyLocked && <span className="muted">· locked</span>}</label>
             <input
               type="number" min="0" max="50" step="0.1"
               value={form.royaltyPercent}
               onChange={set("royaltyPercent")}
-              disabled={priceLocked}
+              disabled={royaltyLocked}
             />
-            {priceLocked && (
+            {royaltyLocked && (
               <div className="hint">Royalty cannot change after the first ticket is sold.</div>
             )}
           </div>
@@ -294,14 +215,23 @@ export default function EditEvent({ contract, account, isConnected, connect, toa
               value={form.maxPerBuyer}
               onChange={set("maxPerBuyer")}
             />
-            <div className="hint">Global cap is 10.</div>
+            <div className="hint">Global cap is 10. Applies across sections.</div>
           </div>
 
           <div className="field row2">
-            <label>Supply</label>
-            <div className="muted" style={{fontSize: 13}}>
-              {event.ticketsSold} sold out of {event.maxTickets} minted.
-              Use the <Link to="/organise">dashboard</Link> "Add tickets" button to mint more.
+            <label>Sections</label>
+            <div className="muted" style={{fontSize: 13, lineHeight: 1.5}}>
+              This event has <b>{event.sections?.length || 0}</b> section(s):{" "}
+              {(event.sections || []).map((s, i) => (
+                <span key={s.id}>
+                  {i > 0 && " · "}
+                  <b>{s.name}</b> ({formatETH(s.priceWei)} ETH, {s.ticketsSold}/{s.maxTickets})
+                </span>
+              ))}
+              .{" "}
+              Section names and prices are locked after creation; use the{" "}
+              <Link to="/organise">dashboard</Link> "Add tickets" action to
+              increase supply within a section.
             </div>
           </div>
         </div>
@@ -310,7 +240,7 @@ export default function EditEvent({ contract, account, isConnected, connect, toa
 
         <div className="flex justify-between items-center">
           <span className="muted" style={{fontSize: 13}}>
-            Only the fields you change will be submitted on-chain.
+            Only event-level fields are edited here. Sections are managed from the dashboard.
           </span>
           <div className="flex gap-8">
             <Link to="/organise" className="btn btn-ghost">Discard</Link>

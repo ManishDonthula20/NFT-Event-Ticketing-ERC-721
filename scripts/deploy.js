@@ -18,30 +18,36 @@ const DEMO_EVENTS = [
     category: "Music",
     metadataURI: "ipfs://bafybeigindiecid",
     daysAhead: 14,
-    priceEth: "0.05",
-    maxTickets: 80,
     royaltyBps: 800, // 8%
     maxPerBuyer: 4,
+    sections: [
+      { name: "Front Row", priceEth: "0.12", maxTickets: 20 },
+      { name: "Standing",  priceEth: "0.05", maxTickets: 60 },
+    ],
   },
   {
     name: "Blockchain & You Conference",
     category: "Conference",
     metadataURI: "ipfs://bafybeigconfcid",
     daysAhead: 21,
-    priceEth: "0.12",
-    maxTickets: 150,
     royaltyBps: 500, // 5%
     maxPerBuyer: 2,
+    sections: [
+      { name: "Speaker Pass", priceEth: "0.35", maxTickets: 30 },
+      { name: "General",      priceEth: "0.12", maxTickets: 120 },
+    ],
   },
   {
     name: "Theatre Night — A Midsummer Script Dream",
     category: "Theatre",
     metadataURI: "ipfs://bafybeigtheatercid",
     daysAhead: 30,
-    priceEth: "0.03",
-    maxTickets: 60,
     royaltyBps: 1000, // 10%
     maxPerBuyer: 6,
+    sections: [
+      { name: "Orchestra", priceEth: "0.08", maxTickets: 20 },
+      { name: "Balcony",   priceEth: "0.03", maxTickets: 40 },
+    ],
   },
 ];
 
@@ -73,18 +79,25 @@ async function main() {
     console.log("\n  Seeding demo events...");
     const now = Math.floor(Date.now() / 1000);
     for (const ev of DEMO_EVENTS) {
+      const sections = ev.sections.map((s) => ({
+        name: s.name,
+        priceWei: hre.ethers.parseEther(s.priceEth),
+        maxTickets: s.maxTickets,
+      }));
       const tx = await contract.createEvent(
         ev.name,
         ev.category,
         ev.metadataURI,
         now + ev.daysAhead * 24 * 60 * 60,
-        hre.ethers.parseEther(ev.priceEth),
-        ev.maxTickets,
         ev.royaltyBps,
-        ev.maxPerBuyer
+        ev.maxPerBuyer,
+        sections
       );
       await tx.wait();
-      console.log(`    ✓ ${ev.name} (${ev.priceEth} ETH, ${ev.maxTickets} tickets)`);
+      const summary = ev.sections
+        .map((s) => `${s.name} ${s.priceEth}ETH ×${s.maxTickets}`)
+        .join(", ");
+      console.log(`    ✓ ${ev.name} — ${summary}`);
     }
   }
 
