@@ -1,4 +1,5 @@
 require("@nomicfoundation/hardhat-toolbox");
+require("solidity-coverage");
 require("dotenv").config();
 
 /** @type import('hardhat/config').HardhatUserConfig */
@@ -44,6 +45,8 @@ module.exports = {
     enabled: process.env.REPORT_GAS === "true",
     currency: "USD",
     showMethodSig: true,
+    outputFile: process.env.GAS_OUT || undefined,
+    noColors: process.env.GAS_OUT ? true : false,
     excludeContracts: [],
   },
 };
