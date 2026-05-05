@@ -144,7 +144,7 @@ export default function EventDetails({ contract, account, isConnected, connect, 
     return (
       <div className="empty">
         <h3>Event not found</h3>
-        <p>The event ID you requested does not exist on-chain.</p>
+        <p>The event ID you requested does not exist onchain.</p>
         <Link to="/" className="btn btn-primary">Browse events</Link>
       </div>
     );
@@ -206,7 +206,7 @@ export default function EventDetails({ contract, account, isConnected, connect, 
           <div className="card">
             <h2 style={{fontSize: "1.3rem", marginBottom: 12}}>Sections</h2>
             <div className="aside" style={{marginBottom: 12}}>
-              Choose the section you'd like to buy from.
+              Choose the section you would like to buy from.
             </div>
             <div className="flex-col gap-8">
               {event.sections?.map((s) => {

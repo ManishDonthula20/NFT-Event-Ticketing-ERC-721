@@ -214,7 +214,7 @@ export default function CreateEvent({ contract, isConnected, connect, toast, bum
             <div className="hint">
               Stored in the event's IPFS metadata document alongside the
               banner image. Content-addressed, so it cannot be tampered
-              with after creation — and much cheaper than storing on chain.
+              with after creation.
             </div>
           </div>
 

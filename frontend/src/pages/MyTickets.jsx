@@ -4,21 +4,6 @@ import TicketCard from "../components/TicketCard";
 import { useUserTickets } from "../hooks/useEvents";
 import { formatDate, formatETH, isPast, parseETH } from "../utils/helpers";
 
-/**
- * My tickets page. Tickets for the same event are clubbed together into a
- * single card so a buyer who owns four Regulars and two VIPs for one
- * festival sees one entry instead of six. Each group shows:
- *   - event metadata
- *   - total tickets owned
- *   - the tiers represented and the count per tier
- *   - the price range those tickets were purchased at
- *
- * A secondary "show details" expansion reveals the individual TicketCards
- * for listing on resale, etc.
- *
- * Buckets (listed / upcoming / past) remain at the top level so the most
- * relevant group is always at the top of the page.
- */
 export default function MyTickets({ contract, account, isConnected, connect, toast, refreshKey, bump }) {
   const { tickets, loading, refetch } = useUserTickets(contract, account, refreshKey);
 
