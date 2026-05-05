@@ -238,11 +238,11 @@ size)
   - **Grouping** by event + tier (shows VIP / Regular / Economy
   breakdowns with aggregated counts and prices)
 - **IPFS integration inside the app**
-  - Pinata (JWT) is preferred; falls back to a local Kubo daemon on
+  - Pinata (JWT) is preferred;falls back to a local Kubo daemon on
   port 5001 if configured
-  - `CreateEvent` uploads image → uploads metadata JSON → stores only
+  - `CreateEvent` uploads image→uploads metadata JSON → stores only
   the resulting CID on chain
-  - `EditEvent` re-pins a new JSON (carrying forward image + section
+  - `EditEvent` re-pins a new JSON(carrying forward image + section
   labels) and updates just the URI
 - **Pinata-aware gateway ordering** (`src/utils/ipfs.js`)
   - If a Pinata JWT is set, the app fetches from Pinata's gateway
