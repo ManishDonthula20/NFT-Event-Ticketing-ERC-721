@@ -128,9 +128,7 @@ function CardThumbnail({ imageUri, alt, category }) {
   );
 }
 
-// Deterministic gradient so events without an on-IPFS banner still get
-// a distinctive card. Hash the event name so the same event always
-// renders the same colours across sessions.
+
 function gradientFor(seed) {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;

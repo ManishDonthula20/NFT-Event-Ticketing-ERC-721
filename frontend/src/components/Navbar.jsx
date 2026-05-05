@@ -1,12 +1,6 @@
 import { NavLink, Link } from "react-router-dom";
 import { formatETH } from "../utils/helpers";
 
-/**
- * Top navigation. Intentionally keeps any wallet-identifying info off-screen
- * (no address, no network id). We only show a connection status indicator
- * and the connected balance so the user can tell their wallet is attached
- * without exposing their account to a shoulder-surfer.
- */
 export default function Navbar({
   account,
   balance,
