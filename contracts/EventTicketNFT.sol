@@ -240,12 +240,12 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     // =====================================================================
 
     /**
-     * @notice Creates a new event divided into one or more sections. Any
-     *         address can call; the caller becomes the organiser for that
+     * @notice This creates a new event which is divided into one or more sections. Any
+     *         address can call. The caller becomes the organiser for that
      *         event and will receive primary-sale revenue plus EIP-2981
      *         royalties from resales.
      * @dev    All display text (name, description, category, banner image,
-     *         per-section labels) must be uploaded to IPFS first; only the
+     *         per-section labels) must be uploaded to IPFS first. Only the
      *         resulting `metadataURI` is stored on chain. At least one
      *         section is required.
      * @param  metadataURI  IPFS URI (e.g. "ipfs://<CID>") to the event's
