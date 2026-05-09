@@ -64,6 +64,16 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     ///         tiny sections.
     uint256 public constant MAX_SECTIONS_PER_EVENT = 20;
 
+    /// @notice Hard upper bound on resale price, expressed as a multiplier
+    ///         of the original (primary-sale) section price the ticket was
+    ///         minted at. Sellers may NEVER list a ticket above
+    ///         `MAX_RESALE_PRICE_MULTIPLIER × originalSectionPrice`. This
+    ///         is the protocol-level anti-scalping rail (paired with the
+    ///         per-buyer cap on primary sales). Free tickets
+    ///         (originalPrice == 0) bypass this cap because 0 × N == 0
+    ///         would otherwise make them un-resellable.
+    uint256 public constant MAX_RESALE_PRICE_MULTIPLIER = 2;
+
     // ---------------------------------------------------------------------
     // Types
     // ---------------------------------------------------------------------
@@ -529,6 +539,17 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         require(!ev.cancelled, "Event cancelled");
         require(block.timestamp < ev.date, "Event already finished");
 
+        // Anti-scalping rail: cap resale price at 2x the original section
+        // price the ticket was minted at. Free tickets (originalPrice == 0)
+        // are exempt — otherwise the cap would force the resale price to 0.
+        uint256 originalPrice = _sections[eventId][tokenToSection[tokenId]].priceWei;
+        if (originalPrice > 0) {
+            require(
+                price <= originalPrice * MAX_RESALE_PRICE_MULTIPLIER,
+                "Resale price exceeds 2x original"
+            );
+        }
+
         if (expiresAt != 0) {
             require(expiresAt > block.timestamp, "expiresAt in the past");
             require(expiresAt <= ev.date, "expiresAt after event date");
@@ -697,6 +718,22 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     /// @notice Returns the resale listing for a given tokenId (may be inactive).
     function getResaleListing(uint256 tokenId) external view returns (ResaleListing memory) {
         return _resale[tokenId];
+    }
+
+    /**
+     * @notice Maximum resale price (in wei) the ticket can be listed at.
+     *         Equal to `MAX_RESALE_PRICE_MULTIPLIER × originalSectionPrice`.
+     *         Returns `type(uint256).max` for tickets minted at price 0
+     *         (free tickets are exempt from the cap).
+     * @param  tokenId Ticket id to query the cap for.
+     */
+    function maxResalePriceFor(uint256 tokenId) external view returns (uint256) {
+        require(_ownerOfSafe(tokenId) != address(0), "Token does not exist");
+        uint256 eventId   = tokenToEvent[tokenId];
+        uint256 sectionId = tokenToSection[tokenId];
+        uint256 original  = _sections[eventId][sectionId].priceWei;
+        if (original == 0) return type(uint256).max;
+        return original * MAX_RESALE_PRICE_MULTIPLIER;
     }
 
     /// @notice Returns all currently-active resale listing tokenIds.

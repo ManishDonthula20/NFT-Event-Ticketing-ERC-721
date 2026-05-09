@@ -551,6 +551,55 @@ describe("EventTicketNFT", function () {
         contract.connect(buyer1).listForResale(1, ethers.parseEther("0.15"), future + 10)
       ).to.be.revertedWith("expiresAt after event date");
     });
+
+    // -----------------------------------------------------------------
+    // Anti-scalping: resale price capped at 2x the original section price
+    // -----------------------------------------------------------------
+    it("allows listing exactly at 2x the original price", async function () {
+      const { contract, buyer1, price } = await loadFixture(holdTicketFixture);
+      const cap = price * 2n; // 0.2 ETH for the 0.1 ETH primary fixture
+      await expect(contract.connect(buyer1).listForResale(1, cap, 0))
+        .to.emit(contract, "TicketListedForResale")
+        .withArgs(1, buyer1.address, cap, 0);
+    });
+
+    it("reverts if resale price exceeds 2x the original", async function () {
+      const { contract, buyer1, price } = await loadFixture(holdTicketFixture);
+      const overCap = price * 2n + 1n;
+      await expect(
+        contract.connect(buyer1).listForResale(1, overCap, 0)
+      ).to.be.revertedWith("Resale price exceeds 2x original");
+    });
+
+    it("enforces cap per-section in multi-section events", async function () {
+      const { contract, buyer1, sections } = await (async () => {
+        const d = await multiSectionFixture();
+        // buyer1 grabs an Economy ticket (section 2 @ 0.05 ETH)
+        await d.contract
+          .connect(d.buyer1)
+          .buyTicket(0, 2, { value: d.sections[2].priceWei });
+        return d;
+      })();
+      const economyPrice = sections[2].priceWei; // 0.05 ETH
+      // Listing at the VIP price (0.5 ETH) is way over the 2x economy cap.
+      await expect(
+        contract.connect(buyer1).listForResale(1, ethers.parseEther("0.5"), 0)
+      ).to.be.revertedWith("Resale price exceeds 2x original");
+      // But 2x the economy price is fine.
+      await expect(
+        contract.connect(buyer1).listForResale(1, economyPrice * 2n, 0)
+      ).to.emit(contract, "TicketListedForResale");
+    });
+
+    it("maxResalePriceFor returns 2x original price", async function () {
+      const { contract, price } = await loadFixture(holdTicketFixture);
+      expect(await contract.maxResalePriceFor(1)).to.equal(price * 2n);
+    });
+
+    it("exposes MAX_RESALE_PRICE_MULTIPLIER as a public constant", async function () {
+      const { contract } = await loadFixture(deployFixture);
+      expect(await contract.MAX_RESALE_PRICE_MULTIPLIER()).to.equal(2n);
+    });
   });
 
   // -------------------------------------------------------------------
@@ -560,7 +609,8 @@ describe("EventTicketNFT", function () {
     async function listedFixture() {
       const d = await eventCreatedFixture();
       await d.contract.connect(d.buyer1).buyTicket(0, 0, { value: d.price });
-      const resalePrice = ethers.parseEther("1.0");
+      // Stay within the 2x anti-scalping cap (primary price is 0.1 ETH).
+      const resalePrice = d.price * 2n;
       await d.contract.connect(d.buyer1).listForResale(1, resalePrice, 0);
       return { ...d, resalePrice };
     }

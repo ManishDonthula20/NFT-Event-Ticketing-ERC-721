@@ -34,6 +34,25 @@ export const calculateSellerAmount = (priceWei, royaltyBps) => {
   return BigInt(priceWei) - royalty;
 };
 
+// Anti-scalping rail: a ticket's resale price may never exceed this many
+// times the original (primary-sale) section price the ticket was minted
+// at. Mirrors `MAX_RESALE_PRICE_MULTIPLIER` on EventTicketNFT.sol — keep
+// the two in lockstep.
+export const MAX_RESALE_PRICE_MULTIPLIER = 2n;
+
+/**
+ * Maximum allowed resale price (in wei) for a ticket originally bought at
+ * `originalPriceWei`. Mirrors `EventTicketNFT.maxResalePriceFor` so the
+ * UI can validate before a wallet round-trip. Returns `null` (no cap) for
+ * free tickets, matching the on-chain bypass.
+ */
+export const maxResalePriceWei = (originalPriceWei) => {
+  if (!originalPriceWei) return null;
+  const orig = BigInt(originalPriceWei);
+  if (orig === 0n) return null;
+  return orig * MAX_RESALE_PRICE_MULTIPLIER;
+};
+
 export const formatDate = (unix) => {
   const ms = Number(unix) * 1000;
   const d = new Date(ms);

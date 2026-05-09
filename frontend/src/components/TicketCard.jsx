@@ -6,6 +6,8 @@ import {
   isPast,
   humanizeError,
   bpsToPercent,
+  maxResalePriceWei,
+  MAX_RESALE_PRICE_MULTIPLIER,
 } from "../utils/helpers";
 import { useInrRate, weiToInr, formatINR } from "../hooks/useCurrency";
 
@@ -27,11 +29,20 @@ export default function TicketCard({
   // Section price tells the holder what they actually paid; fall back to the
   // event-level aggregate if section data failed to load for some reason.
   const paidPriceWei = section?.priceWei ?? event.priceWei;
+  // Anti-scalping: chain rejects price > 2x original, so we mirror that
+  // rule client-side for an instant error instead of a wallet round-trip.
+  const resaleCapWei = maxResalePriceWei(paidPriceWei);
 
   const handleList = async () => {
     try {
       const wei = parseETH(priceEth);
       if (wei <= 0n) return toast.danger("Enter a valid price.");
+      if (resaleCapWei !== null && wei > resaleCapWei) {
+        return toast.danger(
+          `Resale price can't exceed ${MAX_RESALE_PRICE_MULTIPLIER}× the ` +
+          `original (max ${formatETH(resaleCapWei)} ETH).`
+        );
+      }
       let expiresAt = 0;
       if (expiresDays) {
         const days = parseFloat(expiresDays);
@@ -51,6 +62,13 @@ export default function TicketCard({
       setBusy(false);
     }
   };
+
+  // Live preview for the price input so users see the cap break in real time.
+  const enteredWei = (() => {
+    try { return priceEth ? parseETH(priceEth) : 0n; } catch { return 0n; }
+  })();
+  const overCap =
+    resaleCapWei !== null && enteredWei > 0n && enteredWei > resaleCapWei;
 
   const handleCancel = async () => {
     try {
@@ -194,11 +212,35 @@ export default function TicketCard({
               <div className="field">
                 <label>Resale price (ETH)</label>
                 <input
-                  type="number" step="0.001" min="0"
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  max={resaleCapWei !== null ? formatETH(resaleCapWei) : undefined}
                   value={priceEth}
                   onChange={(e) => setPriceEth(e.target.value)}
                   placeholder="0.15"
                 />
+                <div className="hint">
+                  Original price: <b>{formatETH(paidPriceWei)} ETH</b>
+                  {resaleCapWei !== null ? (
+                    <>
+                      {" · "}Max resale (
+                      {String(MAX_RESALE_PRICE_MULTIPLIER)}× cap):{" "}
+                      <b>{formatETH(resaleCapWei)} ETH</b>
+                    </>
+                  ) : (
+                    <> · Free ticket — no resale cap applies.</>
+                  )}
+                </div>
+                {overCap && (
+                  <div
+                    className="hint"
+                    style={{ color: "var(--danger, #c0392b)", marginTop: 4 }}
+                  >
+                    Price exceeds the {String(MAX_RESALE_PRICE_MULTIPLIER)}×
+                    cap. Maximum allowed: {formatETH(resaleCapWei)} ETH.
+                  </div>
+                )}
               </div>
               <div className="field">
                 <label>Expires in (days, optional)</label>
@@ -216,7 +258,11 @@ export default function TicketCard({
               <button className="btn btn-ghost" onClick={() => setShowListModal(false)}>
                 Cancel
               </button>
-              <button className="btn btn-accent" onClick={handleList} disabled={busy}>
+              <button
+                className="btn btn-accent"
+                onClick={handleList}
+                disabled={busy || overCap}
+              >
                 {busy ? "Listing…" : "Confirm listing"}
               </button>
             </div>
