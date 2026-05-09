@@ -541,7 +541,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
 
         // Anti-scalping rail: cap resale price at 2x the original section
         // price the ticket was minted at. Free tickets (originalPrice == 0)
-        // are exempt — otherwise the cap would force the resale price to 0.
+        // are exempt — otherwise the cap would force the resale price to 0
         uint256 originalPrice = _sections[eventId][tokenToSection[tokenId]].priceWei;
         if (originalPrice > 0) {
             require(
@@ -551,7 +551,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         }
 
         if (expiresAt != 0) {
-            require(expiresAt > block.timestamp, "expiresAt in the past");
+            require(expiresAt > block.timestamp,"expiresAt in the past");
             require(expiresAt <= ev.date, "expiresAt after event date");
         }
 
@@ -583,7 +583,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     /**
      * @notice Purchases a ticket from the resale marketplace. The sale price
      *         is split: royaltyBps goes to the event organiser; the remainder
-     *         goes to the seller. Excess ETH sent by the buyer is refunded.
+     *         goes to the seller.Excess ETH sent by the buyer is refunded.
      * @param  tokenId Ticket id to purchase.
      */
     function buyResaleTicket(uint256 tokenId) external payable nonReentrant {
@@ -607,7 +607,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
 
         uint256 salePrice    = listing.price;
         uint256 royaltyAmt   = (salePrice * ev.royaltyBps) / 10_000;
-        uint256 sellerAmt    = salePrice - royaltyAmt;
+        uint256 sellerAmt    = salePrice-royaltyAmt;
         address organiser    = ev.organiser;
 
         // Effects.
@@ -683,7 +683,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         return _sections[eventId][sectionId];
     }
 
-    /// @notice Number of sections on an event.
+    /// @notice Returns Number of sections on an event.
     function getSectionCount(uint256 eventId)
         external
         view
