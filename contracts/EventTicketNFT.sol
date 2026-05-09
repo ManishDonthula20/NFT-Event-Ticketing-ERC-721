@@ -145,7 +145,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     mapping(uint256 => ResaleListing) private _resale;
 
     /// @notice (buyer,eventId) → tickets purchased — anti-scalping accounting
-    mapping(address => mapping(uint256 => uint256)) public ticketsOwnedByBuyer;
+    mapping(address =>  mapping(uint256 => uint256)) public ticketsOwnedByBuyer;
 
     /// @notice tokenId → event date, used for resale validity checks.
     mapping(uint256 => uint256) public validity;
@@ -253,7 +253,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
      * @param  date         Unix timestamp of the event; must be > now + 1 day.
      * @param  royaltyBps   EIP-2981 royalty share in basis points (≤ MAX_ROYALTY_BPS).
      * @param  maxPerBuyer  Per-address purchase cap across all sections.
-     * @param  sections     Array of sections (priceWei/maxTickets each).
+     * @param  sections     array of sections (priceWei/maxTickets each).
      * @return eventId      The numeric id assigned to the newly created event.
      */
     function createEvent(
@@ -276,7 +276,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         require(sections.length <= MAX_SECTIONS_PER_EVENT, "Too many sections");
 
         eventId = _eventIdCounter;
-        // Safe: uint256 cannot realistically overflow from this increment.
+        // Safe : uint256 cannot realistically overflow from this increment.
         unchecked { _eventIdCounter = eventId + 1; }
 
         uint256 totalMax;
@@ -353,7 +353,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         require(!ev.cancelled, "Event cancelled");
         require(bytes(metadataURI).length != 0, "metadataURI required");
         require(newDate > block.timestamp + 1 days, "Event must be at least 1 day in the future");
-        require(newRoyaltyBps <= MAX_ROYALTY_BPS, "Royalty exceeds cap");
+        require(newRoyaltyBps  <= MAX_ROYALTY_BPS, "Royalty exceeds cap");
         require(newMaxPerBuyer > 0, "maxPerBuyer must be > 0");
         require(newMaxPerBuyer <= GLOBAL_MAX_PER_BUYER, "maxPerBuyer exceeds global cap");
 
@@ -387,8 +387,8 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         require(sectionId < _sections[eventId].length, "Invalid section");
 
         Section storage sec = _sections[eventId][sectionId];
-        sec.maxTickets += amount;
-        ev.maxTickets  += amount;
+        sec.maxTickets+=amount;
+        ev.maxTickets+=amount;
 
         emit TicketsAddedToSection(eventId, sectionId, amount, sec.maxTickets, ev.maxTickets);
     }
@@ -431,9 +431,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         emit TicketInvalidated(tokenId, msg.sender);
     }
 
-    // =====================================================================
     //                          PRIMARY SALE
-    // =====================================================================
 
     /**
      * @notice Purchases a single ticket for `eventId` from a specific section.
@@ -606,7 +604,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         require(ownerOf(tokenId) == seller, "Seller no longer owner");
 
         uint256 salePrice    = listing.price;
-        uint256 royaltyAmt   = (salePrice * ev.royaltyBps) / 10_000;
+        uint256 royaltyAmt   = (salePrice*ev.royaltyBps) / 10_000;
         uint256 sellerAmt    = salePrice-royaltyAmt;
         address organiser    = ev.organiser;
 

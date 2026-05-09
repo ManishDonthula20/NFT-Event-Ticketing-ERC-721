@@ -198,7 +198,7 @@ document; only the CID is on chain.
 
 ```json
 {
-  "name": "Indie Night Live",
+  "name": "Indie  Night Live",
   "description": "An intimate evening of local indie bands ...",
   "category": "Music",
   "image": "ipfs://<imageCid>",

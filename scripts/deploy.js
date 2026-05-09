@@ -1,12 +1,5 @@
 /**
  * Deployment script for EventTicketNFT.
- *
- * On the local Hardhat network this also seeds three demo events so the
- * frontend has content to render out of the box.
- *
- * It always writes the deployed address + ABI to:
- *    frontend/src/utils/contract.js
- * so the frontend picks up changes automatically after a fresh deploy.
  */
 const hre = require("hardhat");
 const fs = require("fs");
@@ -118,7 +111,7 @@ async function main() {
       const summary = ev.sections
         .map((s) => `${s.name} ${s.priceEth}ETH ×${s.maxTickets}`)
         .join(", ");
-      console.log(`    ✓ ${ev.name} — ${summary}`);
+      console.log(`   ✓ ${ev.name} — ${summary}`);
     }
   }
 
