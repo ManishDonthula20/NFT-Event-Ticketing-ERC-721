@@ -437,7 +437,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
 
     /**
      * @notice Purchases a single ticket for `eventId` from a specific section.
-     *         The caller must send at least `section.priceWei`; excess is refunded.
+     *         The caller must send at least `section.priceWei`, the excess amount is refunded.
      * @param  eventId   The event to buy a ticket for.
      * @param  sectionId Section (division) to buy from.
      * @return tokenId   The id of the freshly minted ERC-721 ticket.
@@ -453,11 +453,11 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     }
 
     /**
-     * @notice Purchases multiple tickets from the same section in one tx.
+     * @notice Purchases multiple tickets from the same section in one transaction.
      * @param  eventId   The event to buy tickets for.
-     * @param  sectionId Section (division) to buy from.
-     * @param  quantity  Number of tickets (>= 1).
-     * @return firstTokenId Id of the first minted ticket; subsequent tickets
+     * @param  sectionId Section (VIP, Premium, etc.) to buy from.
+     * @param  quantity  Number of tickets (Value >= 1).
+     * @return firstTokenId Id of the first minted ticket, rest of the tickets
      *                      are sequentially numbered.
      */
     function buyMultipleTickets(uint256 eventId, uint256 sectionId, uint256 quantity)
@@ -525,8 +525,8 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
      * @notice Lists a ticket the caller owns on the internal resale market.
      * @param  tokenId   Ticket id to list.
      * @param  price     Resale price in wei (must be > 0).
-     * @param  expiresAt Unix timestamp after which the listing auto-expires;
-     *                   pass 0 to disable expiry.
+     * @param  expiresAt Unix timestamp after which the listing auto-expires. Pass 0 as param to disable expiry.
+     *    
      */
     function listForResale(uint256 tokenId, uint256 price, uint256 expiresAt) external {
         require(price > 0, "Price must be > 0");
@@ -582,8 +582,8 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
 
     /**
      * @notice Purchases a ticket from the resale marketplace. The sale price
-     *         is split: royaltyBps goes to the event organiser; the remainder
-     *         goes to the seller.Excess ETH sent by the buyer is refunded.
+     *         is split: royaltyBps goes to the event organiser, the remainder
+     *         goes to the seller. Excess ETH sent by the buyer is refunded back.
      * @param  tokenId Ticket id to purchase.
      */
     function buyResaleTicket(uint256 tokenId) external payable nonReentrant {
