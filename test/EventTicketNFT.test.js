@@ -1,7 +1,9 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
-const { time, loadFixture } =
-  require("@nomicfoundation/hardhat-toolbox/network-helpers");
+const {
+  time,
+  loadFixture,
+} = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 
 // Only the CID / URI lives on chain now — everything else (name, description,
 // category, section labels, banner image) is expected to be in the JSON
@@ -11,8 +13,7 @@ const METADATA_V2 = "ipfs://bafybeigexamplenewcid";
 
 // `getEvent` on an ethers.js Contract is shadowed by a built-in helper,
 // so we always call the on-chain view via getFunction.
-const getEv = (contract, eventId) =>
-  contract.getFunction("getEvent")(eventId);
+const getEv = (contract, eventId) => contract.getFunction("getEvent")(eventId);
 
 // Build a single "general" section — used by tests that don't care about
 // divisions. Section labels are off-chain now, so each section is just
@@ -61,7 +62,7 @@ describe("EventTicketNFT", function () {
         future,
         royaltyBps,
         maxPerBuyer,
-        singleSection(price, maxTickets)
+        singleSection(price, maxTickets),
       );
     await tx.wait();
 
@@ -73,20 +74,18 @@ describe("EventTicketNFT", function () {
     const { contract, organiser, future } = deployed;
 
     const sections = [
-      { priceWei: ethers.parseEther("0.5"),  maxTickets: 2 },  // VIP
-      { priceWei: ethers.parseEther("0.2"),  maxTickets: 5 },  // Regular
+      { priceWei: ethers.parseEther("0.5"), maxTickets: 2 }, // VIP
+      { priceWei: ethers.parseEther("0.2"), maxTickets: 5 }, // Regular
       { priceWei: ethers.parseEther("0.05"), maxTickets: 10 }, // Economy
     ];
 
-    await contract
-      .connect(organiser)
-      .createEvent(
-        METADATA,
-        future,
-        500, // 5% royalty
-        4,   // maxPerBuyer
-        sections
-      );
+    await contract.connect(organiser).createEvent(
+      METADATA,
+      future,
+      500, // 5% royalty
+      4, // maxPerBuyer
+      sections,
+    );
 
     return { ...deployed, sections };
   }
@@ -129,13 +128,7 @@ describe("EventTicketNFT", function () {
       await expect(
         contract
           .connect(organiser)
-          .createEvent(
-            METADATA,
-            future,
-            500,
-            5,
-            singleSection(price, 100)
-          )
+          .createEvent(METADATA, future, 500, 5, singleSection(price, 100)),
       )
         .to.emit(contract, "EventCreated")
         .withArgs(
@@ -143,9 +136,9 @@ describe("EventTicketNFT", function () {
           organiser.address,
           METADATA,
           future,
-          1,      // sectionCount
-          100,    // aggregate maxTickets
-          500
+          1, // sectionCount
+          100, // aggregate maxTickets
+          500,
         );
 
       const ev = await getEv(contract, 0);
@@ -207,7 +200,7 @@ describe("EventTicketNFT", function () {
       await expect(
         contract
           .connect(organiser)
-          .createEvent("", future, 500, 5, singleSection(100, 10))
+          .createEvent("", future, 500, 5, singleSection(100, 10)),
       ).to.be.revertedWith("metadataURI required");
     });
 
@@ -217,7 +210,7 @@ describe("EventTicketNFT", function () {
       await expect(
         contract
           .connect(organiser)
-          .createEvent(METADATA, past, 500, 5, singleSection(100, 10))
+          .createEvent(METADATA, past, 500, 5, singleSection(100, 10)),
       ).to.be.revertedWith("Event must be at least 1 day in the future");
     });
 
@@ -227,16 +220,14 @@ describe("EventTicketNFT", function () {
       await expect(
         contract
           .connect(organiser)
-          .createEvent(METADATA, soon, 500, 5, singleSection(100, 10))
+          .createEvent(METADATA, soon, 500, 5, singleSection(100, 10)),
       ).to.be.revertedWith("Event must be at least 1 day in the future");
     });
 
     it("reverts if no sections provided", async function () {
       const { contract, organiser, future } = await loadFixture(deployFixture);
       await expect(
-        contract
-          .connect(organiser)
-          .createEvent(METADATA, future, 500, 5, [])
+        contract.connect(organiser).createEvent(METADATA, future, 500, 5, []),
       ).to.be.revertedWith("At least one section required");
     });
 
@@ -247,7 +238,7 @@ describe("EventTicketNFT", function () {
           .connect(organiser)
           .createEvent(METADATA, future, 500, 5, [
             { priceWei: 100, maxTickets: 0 },
-          ])
+          ]),
       ).to.be.revertedWith("Section maxTickets must be > 0");
     });
 
@@ -256,7 +247,7 @@ describe("EventTicketNFT", function () {
       await expect(
         contract
           .connect(organiser)
-          .createEvent(METADATA, future, 5001, 5, singleSection(100, 10))
+          .createEvent(METADATA, future, 5001, 5, singleSection(100, 10)),
       ).to.be.revertedWith("Royalty exceeds cap");
     });
 
@@ -265,7 +256,7 @@ describe("EventTicketNFT", function () {
       await expect(
         contract
           .connect(organiser)
-          .createEvent(METADATA, future, 500, 0, singleSection(100, 10))
+          .createEvent(METADATA, future, 500, 0, singleSection(100, 10)),
       ).to.be.revertedWith("maxPerBuyer must be > 0");
     });
 
@@ -274,7 +265,7 @@ describe("EventTicketNFT", function () {
       await expect(
         contract
           .connect(organiser)
-          .createEvent(METADATA, future, 500, 9999, singleSection(100, 10))
+          .createEvent(METADATA, future, 500, 9999, singleSection(100, 10)),
       ).to.be.revertedWith("maxPerBuyer exceeds global cap");
     });
 
@@ -295,13 +286,11 @@ describe("EventTicketNFT", function () {
   describe("buyTicket (sectioned)", function () {
     it("mints NFT from the chosen section and transfers ETH to organiser", async function () {
       const { contract, organiser, buyer1, price } = await loadFixture(
-        eventCreatedFixture
+        eventCreatedFixture,
       );
       const balBefore = await ethers.provider.getBalance(organiser.address);
 
-      await expect(
-        contract.connect(buyer1).buyTicket(0, 0, { value: price })
-      )
+      await expect(contract.connect(buyer1).buyTicket(0, 0, { value: price }))
         .to.emit(contract, "TicketMinted")
         .withArgs(1, 0, 0, buyer1.address, price);
 
@@ -314,18 +303,23 @@ describe("EventTicketNFT", function () {
     });
 
     it("charges each section its own price", async function () {
-      const { contract, organiser, buyer1, buyer2, sections } = await loadFixture(
-        multiSectionFixture
-      );
+      const { contract, organiser, buyer1, buyer2, sections } =
+        await loadFixture(multiSectionFixture);
       const balBefore = await ethers.provider.getBalance(organiser.address);
 
       // Buy a VIP (section 0, 0.5 ETH)
-      await contract.connect(buyer1).buyTicket(0, 0, { value: sections[0].priceWei });
+      await contract
+        .connect(buyer1)
+        .buyTicket(0, 0, { value: sections[0].priceWei });
       // Buy an Economy (section 2, 0.05 ETH)
-      await contract.connect(buyer2).buyTicket(0, 2, { value: sections[2].priceWei });
+      await contract
+        .connect(buyer2)
+        .buyTicket(0, 2, { value: sections[2].priceWei });
 
       const balAfter = await ethers.provider.getBalance(organiser.address);
-      expect(balAfter - balBefore).to.equal(sections[0].priceWei + sections[2].priceWei);
+      expect(balAfter - balBefore).to.equal(
+        sections[0].priceWei + sections[2].priceWei,
+      );
 
       const vip = await contract.getSection(0, 0);
       const eco = await contract.getSection(0, 2);
@@ -338,24 +332,34 @@ describe("EventTicketNFT", function () {
     });
 
     it("records per-token section so buyers know what they got", async function () {
-      const { contract, buyer1, sections } = await loadFixture(multiSectionFixture);
-      await contract.connect(buyer1).buyTicket(0, 1, { value: sections[1].priceWei });
+      const { contract, buyer1, sections } = await loadFixture(
+        multiSectionFixture,
+      );
+      await contract
+        .connect(buyer1)
+        .buyTicket(0, 1, { value: sections[1].priceWei });
       expect(await contract.tokenToSection(1)).to.equal(1);
       const sec = await contract.getSectionOfToken(1);
       expect(sec.priceWei).to.equal(sections[1].priceWei);
     });
 
     it("sets tokenURI derived from event metadata + tokenId", async function () {
-      const { contract, buyer1, price } = await loadFixture(eventCreatedFixture);
+      const { contract, buyer1, price } = await loadFixture(
+        eventCreatedFixture,
+      );
       await contract.connect(buyer1).buyTicket(0, 0, { value: price });
       expect(await contract.tokenURI(1)).to.equal(`${METADATA}/1.json`);
     });
 
     it("refunds excess ETH to buyer", async function () {
-      const { contract, buyer1, price } = await loadFixture(eventCreatedFixture);
+      const { contract, buyer1, price } = await loadFixture(
+        eventCreatedFixture,
+      );
       const overpay = price + ethers.parseEther("0.05");
       const balBefore = await ethers.provider.getBalance(buyer1.address);
-      const tx = await contract.connect(buyer1).buyTicket(0, 0, { value: overpay });
+      const tx = await contract
+        .connect(buyer1)
+        .buyTicket(0, 0, { value: overpay });
       const receipt = await tx.wait();
       const gasCost = receipt.gasUsed * receipt.gasPrice;
       const balAfter = await ethers.provider.getBalance(buyer1.address);
@@ -363,61 +367,91 @@ describe("EventTicketNFT", function () {
     });
 
     it("reverts if event does not exist", async function () {
-      const { contract, buyer1, price } = await loadFixture(eventCreatedFixture);
+      const { contract, buyer1, price } = await loadFixture(
+        eventCreatedFixture,
+      );
       await expect(
-        contract.connect(buyer1).buyTicket(99, 0, { value: price })
+        contract.connect(buyer1).buyTicket(99, 0, { value: price }),
       ).to.be.revertedWith("Event does not exist");
     });
 
     it("reverts with invalid section id", async function () {
-      const { contract, buyer1, price } = await loadFixture(eventCreatedFixture);
+      const { contract, buyer1, price } = await loadFixture(
+        eventCreatedFixture,
+      );
       await expect(
-        contract.connect(buyer1).buyTicket(0, 5, { value: price })
+        contract.connect(buyer1).buyTicket(0, 5, { value: price }),
       ).to.be.revertedWith("Invalid section");
     });
 
     it("reverts with insufficient payment", async function () {
-      const { contract, buyer1, price } = await loadFixture(eventCreatedFixture);
+      const { contract, buyer1, price } = await loadFixture(
+        eventCreatedFixture,
+      );
       await expect(
-        contract.connect(buyer1).buyTicket(0, 0, { value: price - 1n })
+        contract.connect(buyer1).buyTicket(0, 0, { value: price - 1n }),
       ).to.be.revertedWith("Insufficient payment");
     });
 
     it("reverts when a section is sold out", async function () {
-      const { contract, buyer1, buyer2, sections } = await loadFixture(multiSectionFixture);
+      const { contract, buyer1, buyer2, sections } = await loadFixture(
+        multiSectionFixture,
+      );
       // VIP has only 2 tickets.
-      await contract.connect(buyer1).buyTicket(0, 0, { value: sections[0].priceWei });
-      await contract.connect(buyer1).buyTicket(0, 0, { value: sections[0].priceWei });
+      await contract
+        .connect(buyer1)
+        .buyTicket(0, 0, { value: sections[0].priceWei });
+      await contract
+        .connect(buyer1)
+        .buyTicket(0, 0, { value: sections[0].priceWei });
       await expect(
-        contract.connect(buyer2).buyTicket(0, 0, { value: sections[0].priceWei })
+        contract
+          .connect(buyer2)
+          .buyTicket(0, 0, { value: sections[0].priceWei }),
       ).to.be.revertedWith("Not enough tickets in section");
     });
 
     it("reverts when event date has passed", async function () {
-      const { contract, buyer1, price, future } = await loadFixture(eventCreatedFixture);
+      const { contract, buyer1, price, future } = await loadFixture(
+        eventCreatedFixture,
+      );
       await time.increaseTo(future + 1);
       await expect(
-        contract.connect(buyer1).buyTicket(0, 0, { value: price })
+        contract.connect(buyer1).buyTicket(0, 0, { value: price }),
       ).to.be.revertedWith("Event already finished");
     });
 
     it("reverts when event is cancelled", async function () {
-      const { contract, organiser, buyer1, price } = await loadFixture(eventCreatedFixture);
+      const { contract, organiser, buyer1, price } = await loadFixture(
+        eventCreatedFixture,
+      );
       await contract.connect(organiser).cancelEvent(0);
       await expect(
-        contract.connect(buyer1).buyTicket(0, 0, { value: price })
+        contract.connect(buyer1).buyTicket(0, 0, { value: price }),
       ).to.be.revertedWith("Event cancelled");
     });
 
     it("enforces per-buyer cap across sections", async function () {
-      const { contract, buyer1, sections } = await loadFixture(multiSectionFixture);
+      const { contract, buyer1, sections } = await loadFixture(
+        multiSectionFixture,
+      );
       // maxPerBuyer = 4. Mix of sections.
-      await contract.connect(buyer1).buyTicket(0, 0, { value: sections[0].priceWei });
-      await contract.connect(buyer1).buyTicket(0, 1, { value: sections[1].priceWei });
-      await contract.connect(buyer1).buyTicket(0, 2, { value: sections[2].priceWei });
-      await contract.connect(buyer1).buyTicket(0, 2, { value: sections[2].priceWei });
+      await contract
+        .connect(buyer1)
+        .buyTicket(0, 0, { value: sections[0].priceWei });
+      await contract
+        .connect(buyer1)
+        .buyTicket(0, 1, { value: sections[1].priceWei });
+      await contract
+        .connect(buyer1)
+        .buyTicket(0, 2, { value: sections[2].priceWei });
+      await contract
+        .connect(buyer1)
+        .buyTicket(0, 2, { value: sections[2].priceWei });
       await expect(
-        contract.connect(buyer1).buyTicket(0, 2, { value: sections[2].priceWei })
+        contract
+          .connect(buyer1)
+          .buyTicket(0, 2, { value: sections[2].priceWei }),
       ).to.be.revertedWith("Per-buyer cap exceeded");
     });
   });
@@ -427,7 +461,9 @@ describe("EventTicketNFT", function () {
   // -------------------------------------------------------------------
   describe("buyMultipleTickets", function () {
     it("mints multiple NFTs from the same section", async function () {
-      const { contract, buyer1, price } = await loadFixture(eventCreatedFixture);
+      const { contract, buyer1, price } = await loadFixture(
+        eventCreatedFixture,
+      );
       const qty = 3;
       await contract
         .connect(buyer1)
@@ -441,38 +477,40 @@ describe("EventTicketNFT", function () {
     });
 
     it("reverts if section supply exceeded", async function () {
-      const { contract, buyer1, sections } = await loadFixture(multiSectionFixture);
+      const { contract, buyer1, sections } = await loadFixture(
+        multiSectionFixture,
+      );
       await expect(
         contract
           .connect(buyer1)
-          .buyMultipleTickets(0, 0, 3, { value: sections[0].priceWei * 3n })
+          .buyMultipleTickets(0, 0, 3, { value: sections[0].priceWei * 3n }),
       ).to.be.revertedWith("Not enough tickets in section");
     });
 
     it("reverts if per-buyer cap exceeded", async function () {
       const { contract, buyer1, price, maxPerBuyer } = await loadFixture(
-        eventCreatedFixture
+        eventCreatedFixture,
       );
       await expect(
-        contract
-          .connect(buyer1)
-          .buyMultipleTickets(0, 0, maxPerBuyer + 1, {
-            value: price * BigInt(maxPerBuyer + 1),
-          })
+        contract.connect(buyer1).buyMultipleTickets(0, 0, maxPerBuyer + 1, {
+          value: price * BigInt(maxPerBuyer + 1),
+        }),
       ).to.be.revertedWith("Per-buyer cap exceeded");
     });
 
     it("reverts with quantity 0", async function () {
       const { contract, buyer1 } = await loadFixture(eventCreatedFixture);
       await expect(
-        contract.connect(buyer1).buyMultipleTickets(0, 0, 0, { value: 0 })
+        contract.connect(buyer1).buyMultipleTickets(0, 0, 0, { value: 0 }),
       ).to.be.revertedWith("quantity must be > 0");
     });
 
     it("reverts with insufficient payment", async function () {
-      const { contract, buyer1, price } = await loadFixture(eventCreatedFixture);
+      const { contract, buyer1, price } = await loadFixture(
+        eventCreatedFixture,
+      );
       await expect(
-        contract.connect(buyer1).buyMultipleTickets(0, 0, 2, { value: price })
+        contract.connect(buyer1).buyMultipleTickets(0, 0, 2, { value: price }),
       ).to.be.revertedWith("Insufficient payment");
     });
   });
@@ -502,7 +540,9 @@ describe("EventTicketNFT", function () {
 
     it("adds tokenId to active listings list", async function () {
       const { contract, buyer1 } = await loadFixture(holdTicketFixture);
-      await contract.connect(buyer1).listForResale(1, ethers.parseEther("0.15"), 0);
+      await contract
+        .connect(buyer1)
+        .listForResale(1, ethers.parseEther("0.15"), 0);
       const active = await contract.getActiveListings();
       expect(active.map((x) => Number(x))).to.include(1);
     });
@@ -510,30 +550,34 @@ describe("EventTicketNFT", function () {
     it("reverts if caller is not owner", async function () {
       const { contract, buyer2 } = await loadFixture(holdTicketFixture);
       await expect(
-        contract.connect(buyer2).listForResale(1, ethers.parseEther("0.15"), 0)
+        contract.connect(buyer2).listForResale(1, ethers.parseEther("0.15"), 0),
       ).to.be.revertedWith("Not ticket owner");
     });
 
     it("reverts if already listed", async function () {
       const { contract, buyer1 } = await loadFixture(holdTicketFixture);
-      await contract.connect(buyer1).listForResale(1, ethers.parseEther("0.15"), 0);
+      await contract
+        .connect(buyer1)
+        .listForResale(1, ethers.parseEther("0.15"), 0);
       await expect(
-        contract.connect(buyer1).listForResale(1, ethers.parseEther("0.15"), 0)
+        contract.connect(buyer1).listForResale(1, ethers.parseEther("0.15"), 0),
       ).to.be.revertedWith("Already listed");
     });
 
     it("reverts if price is zero", async function () {
       const { contract, buyer1 } = await loadFixture(holdTicketFixture);
       await expect(
-        contract.connect(buyer1).listForResale(1, 0, 0)
+        contract.connect(buyer1).listForResale(1, 0, 0),
       ).to.be.revertedWith("Price must be > 0");
     });
 
     it("reverts when listing an invalidated ticket", async function () {
-      const { contract, buyer1, organiser } = await loadFixture(holdTicketFixture);
+      const { contract, buyer1, organiser } = await loadFixture(
+        holdTicketFixture,
+      );
       await contract.connect(organiser).invalidateTicket(1);
       await expect(
-        contract.connect(buyer1).listForResale(1, ethers.parseEther("0.15"), 0)
+        contract.connect(buyer1).listForResale(1, ethers.parseEther("0.15"), 0),
       ).to.be.revertedWith("Ticket invalidated");
     });
 
@@ -541,14 +585,18 @@ describe("EventTicketNFT", function () {
       const { contract, buyer1 } = await loadFixture(holdTicketFixture);
       const past = (await time.latest()) - 100;
       await expect(
-        contract.connect(buyer1).listForResale(1, ethers.parseEther("0.15"), past)
+        contract
+          .connect(buyer1)
+          .listForResale(1, ethers.parseEther("0.15"), past),
       ).to.be.revertedWith("expiresAt in the past");
     });
 
     it("rejects expiry after event date", async function () {
       const { contract, buyer1, future } = await loadFixture(holdTicketFixture);
       await expect(
-        contract.connect(buyer1).listForResale(1, ethers.parseEther("0.15"), future + 10)
+        contract
+          .connect(buyer1)
+          .listForResale(1, ethers.parseEther("0.15"), future + 10),
       ).to.be.revertedWith("expiresAt after event date");
     });
 
@@ -567,7 +615,7 @@ describe("EventTicketNFT", function () {
       const { contract, buyer1, price } = await loadFixture(holdTicketFixture);
       const overCap = price * 2n + 1n;
       await expect(
-        contract.connect(buyer1).listForResale(1, overCap, 0)
+        contract.connect(buyer1).listForResale(1, overCap, 0),
       ).to.be.revertedWith("Resale price exceeds 2x original");
     });
 
@@ -583,11 +631,11 @@ describe("EventTicketNFT", function () {
       const economyPrice = sections[2].priceWei; // 0.05 ETH
       // Listing at the VIP price (0.5 ETH) is way over the 2x economy cap.
       await expect(
-        contract.connect(buyer1).listForResale(1, ethers.parseEther("0.5"), 0)
+        contract.connect(buyer1).listForResale(1, ethers.parseEther("0.5"), 0),
       ).to.be.revertedWith("Resale price exceeds 2x original");
       // But 2x the economy price is fine.
       await expect(
-        contract.connect(buyer1).listForResale(1, economyPrice * 2n, 0)
+        contract.connect(buyer1).listForResale(1, economyPrice * 2n, 0),
       ).to.emit(contract, "TicketListedForResale");
     });
 
@@ -620,12 +668,16 @@ describe("EventTicketNFT", function () {
         await loadFixture(listedFixture);
 
       const sellerBefore = await ethers.provider.getBalance(buyer1.address);
-      const organiserBefore = await ethers.provider.getBalance(organiser.address);
+      const organiserBefore = await ethers.provider.getBalance(
+        organiser.address,
+      );
 
       await contract.connect(buyer2).buyResaleTicket(1, { value: resalePrice });
 
       const sellerAfter = await ethers.provider.getBalance(buyer1.address);
-      const organiserAfter = await ethers.provider.getBalance(organiser.address);
+      const organiserAfter = await ethers.provider.getBalance(
+        organiser.address,
+      );
 
       const royalty = resalePrice / 10n;
       const sellerAmount = resalePrice - royalty;
@@ -636,19 +688,76 @@ describe("EventTicketNFT", function () {
     });
 
     it("reverts if seller tries to buy their own listing", async function () {
-      const { contract, buyer1, resalePrice } = await loadFixture(listedFixture);
+      const { contract, buyer1, resalePrice } = await loadFixture(
+        listedFixture,
+      );
       await expect(
-        contract.connect(buyer1).buyResaleTicket(1, { value: resalePrice })
+        contract.connect(buyer1).buyResaleTicket(1, { value: resalePrice }),
       ).to.be.revertedWith("Cannot buy own listing");
     });
 
     it("reverts when event is cancelled", async function () {
-      const { contract, organiser, buyer2, resalePrice } = await loadFixture(listedFixture);
+      const { contract, organiser, buyer2, resalePrice } = await loadFixture(
+        listedFixture,
+      );
       await contract.connect(organiser).cancelEvent(0);
       await expect(
-        contract.connect(buyer2).buyResaleTicket(1, { value: resalePrice })
+        contract.connect(buyer2).buyResaleTicket(1, { value: resalePrice }),
       ).to.be.revertedWith("Event cancelled");
     });
+
+    // Rubric A.6 — "Cancelled listing cannot be purchased".
+    // The seller cancels their own listing and a third-party buyer then
+    // attempts to purchase it. The contract must reject the purchase with
+    // "Listing not active" because cancelResaleListing flips the active
+    // flag to false.
+    it("reverts when the listing was cancelled by the seller", async function () {
+      const { contract, buyer1, buyer2, resalePrice } = await loadFixture(
+        listedFixture,
+      );
+
+      // Seller cancels first — listing becomes inactive on-chain.
+      await expect(contract.connect(buyer1).cancelResaleListing(1))
+        .to.emit(contract, "ResaleListingCancelled")
+        .withArgs(1, buyer1.address);
+
+      // Confirm the listing's active flag flipped (white-box check).
+      const after = await contract.getResaleListing(1);
+      expect(after.active).to.equal(false);
+
+      // The buyer now tries to purchase the cancelled listing — must revert.
+      await expect(
+        contract.connect(buyer2).buyResaleTicket(1, { value: resalePrice }),
+      ).to.be.revertedWith("Listing not active");
+
+      // Defence in depth: ownership must NOT have moved as a side-effect.
+      expect(await contract.ownerOf(1)).to.equal(buyer1.address);
+    });
+
+    // Stronger variant of the same rubric line, exercising the
+    // "invalidation cancels the listing" path: when the organiser checks
+    // the ticket in (invalidateTicket), the active resale listing is
+    // silently cancelled. A subsequent buyResaleTicket must revert.
+    it("reverts when the listing was auto-cancelled by ticket invalidation",
+      async function () {
+        const { contract, organiser, buyer1, buyer2, resalePrice } =
+          await loadFixture(listedFixture);
+
+        // Organiser checks-in the ticket; this also flips the listing inactive.
+        await contract.connect(organiser).invalidateTicket(1);
+
+        const after = await contract.getResaleListing(1);
+        expect(after.active).to.equal(false);
+
+        await expect(
+          contract.connect(buyer2).buyResaleTicket(1, { value: resalePrice }),
+        ).to.be.revertedWith("Listing not active");
+
+        // And the ticket itself is no longer valid for entry.
+        expect(await contract.isTicketValid(1)).to.equal(false);
+        // Original holder still owns it; nothing transferred.
+        expect(await contract.ownerOf(1)).to.equal(buyer1.address);
+      });
   });
 
   // -------------------------------------------------------------------
@@ -656,7 +765,9 @@ describe("EventTicketNFT", function () {
   // -------------------------------------------------------------------
   describe("royaltyInfo (EIP-2981)", function () {
     it("returns (organiser, 10% of salePrice)", async function () {
-      const { contract, organiser, buyer1, price } = await loadFixture(eventCreatedFixture);
+      const { contract, organiser, buyer1, price } = await loadFixture(
+        eventCreatedFixture,
+      );
       await contract.connect(buyer1).buyTicket(0, 0, { value: price });
       const sale = ethers.parseEther("1.0");
       const [receiver, amount] = await contract.royaltyInfo(1, sale);
@@ -683,21 +794,21 @@ describe("EventTicketNFT", function () {
     it("addTicketsToSection reverts when called by non-organiser", async function () {
       const { contract, buyer1 } = await loadFixture(eventCreatedFixture);
       await expect(
-        contract.connect(buyer1).addTicketsToSection(0, 0, 5)
+        contract.connect(buyer1).addTicketsToSection(0, 0, 5),
       ).to.be.revertedWith("Caller is not organiser");
     });
 
     it("addTicketsToSection reverts with amount 0", async function () {
       const { contract, organiser } = await loadFixture(eventCreatedFixture);
       await expect(
-        contract.connect(organiser).addTicketsToSection(0, 0, 0)
+        contract.connect(organiser).addTicketsToSection(0, 0, 0),
       ).to.be.revertedWith("amount must be > 0");
     });
 
     it("addTicketsToSection reverts with invalid section id", async function () {
       const { contract, organiser } = await loadFixture(eventCreatedFixture);
       await expect(
-        contract.connect(organiser).addTicketsToSection(0, 42, 5)
+        contract.connect(organiser).addTicketsToSection(0, 42, 5),
       ).to.be.revertedWith("Invalid section");
     });
 
@@ -709,9 +820,13 @@ describe("EventTicketNFT", function () {
     });
 
     it("invalidateTicket by organiser marks ticket invalid and cancels any listing", async function () {
-      const { contract, buyer1, organiser, price } = await loadFixture(eventCreatedFixture);
+      const { contract, buyer1, organiser, price } = await loadFixture(
+        eventCreatedFixture,
+      );
       await contract.connect(buyer1).buyTicket(0, 0, { value: price });
-      await contract.connect(buyer1).listForResale(1, ethers.parseEther("0.15"), 0);
+      await contract
+        .connect(buyer1)
+        .listForResale(1, ethers.parseEther("0.15"), 0);
 
       await expect(contract.connect(organiser).invalidateTicket(1))
         .to.emit(contract, "TicketInvalidated")
@@ -724,17 +839,19 @@ describe("EventTicketNFT", function () {
 
     describe("updateEvent", function () {
       it("organiser can change mutable fields before first sale", async function () {
-        const { contract, organiser, future } = await loadFixture(eventCreatedFixture);
-        const newDate  = future + 3600;
+        const { contract, organiser, future } = await loadFixture(
+          eventCreatedFixture,
+        );
+        const newDate = future + 3600;
 
         await expect(
           contract.connect(organiser).updateEvent(
             0,
             METADATA_V2,
             newDate,
-            500,   // 5 %
-            2
-          )
+            500, // 5 %
+            2,
+          ),
         )
           .to.emit(contract, "EventUpdated")
           .withArgs(0, organiser.address);
@@ -747,9 +864,8 @@ describe("EventTicketNFT", function () {
       });
 
       it("royalty is locked once a ticket is sold", async function () {
-        const { contract, organiser, buyer1, price, future } = await loadFixture(
-          eventCreatedFixture
-        );
+        const { contract, organiser, buyer1, price, future } =
+          await loadFixture(eventCreatedFixture);
         await contract.connect(buyer1).buyTicket(0, 0, { value: price });
 
         await expect(
@@ -757,9 +873,9 @@ describe("EventTicketNFT", function () {
             0,
             METADATA,
             future,
-            2000,   // different royalty → should revert
-            3
-          )
+            2000, // different royalty → should revert
+            3,
+          ),
         ).to.be.revertedWith("Royalty locked after first sale");
       });
 
@@ -768,34 +884,28 @@ describe("EventTicketNFT", function () {
           await loadFixture(eventCreatedFixture);
         await contract.connect(buyer1).buyTicket(0, 0, { value: price });
 
-        await contract.connect(organiser).updateEvent(
-          0,
-          METADATA_V2,
-          future,
-          royaltyBps,
-          3
-        );
+        await contract
+          .connect(organiser)
+          .updateEvent(0, METADATA_V2, future, royaltyBps, 3);
         const ev = await getEv(contract, 0);
         expect(ev.metadataURI).to.equal(METADATA_V2);
       });
 
       it("rejects empty metadataURI", async function () {
-        const { contract, organiser, future } = await loadFixture(eventCreatedFixture);
+        const { contract, organiser, future } = await loadFixture(
+          eventCreatedFixture,
+        );
         await expect(
-          contract.connect(organiser).updateEvent(0, "", future, 1000, 3)
+          contract.connect(organiser).updateEvent(0, "", future, 1000, 3),
         ).to.be.revertedWith("metadataURI required");
       });
 
       it("reverts for non-organiser", async function () {
-        const { contract, buyer1, future } = await loadFixture(eventCreatedFixture);
+        const { contract, buyer1, future } = await loadFixture(
+          eventCreatedFixture,
+        );
         await expect(
-          contract.connect(buyer1).updateEvent(
-            0,
-            METADATA,
-            future,
-            1000,
-            3
-          )
+          contract.connect(buyer1).updateEvent(0, METADATA, future, 1000, 3),
         ).to.be.revertedWith("Caller is not organiser");
       });
     });
@@ -806,7 +916,9 @@ describe("EventTicketNFT", function () {
   // -------------------------------------------------------------------
   describe("View helpers", function () {
     it("getTicketsOfUser returns correct ids", async function () {
-      const { contract, buyer1, price } = await loadFixture(eventCreatedFixture);
+      const { contract, buyer1, price } = await loadFixture(
+        eventCreatedFixture,
+      );
       await contract.connect(buyer1).buyTicket(0, 0, { value: price });
       await contract.connect(buyer1).buyTicket(0, 0, { value: price });
       const ids = await contract.getTicketsOfUser(buyer1.address);
@@ -814,33 +926,51 @@ describe("EventTicketNFT", function () {
     });
 
     it("ticketsBoughtBy reflects per-buyer counter across sections", async function () {
-      const { contract, buyer1, sections } = await loadFixture(multiSectionFixture);
+      const { contract, buyer1, sections } = await loadFixture(
+        multiSectionFixture,
+      );
       expect(await contract.ticketsBoughtBy(buyer1.address, 0)).to.equal(0);
-      await contract.connect(buyer1).buyTicket(0, 0, { value: sections[0].priceWei });
-      await contract.connect(buyer1).buyTicket(0, 2, { value: sections[2].priceWei });
+      await contract
+        .connect(buyer1)
+        .buyTicket(0, 0, { value: sections[0].priceWei });
+      await contract
+        .connect(buyer1)
+        .buyTicket(0, 2, { value: sections[2].priceWei });
       expect(await contract.ticketsBoughtBy(buyer1.address, 0)).to.equal(2);
     });
 
     it("getEventOfToken returns event data for a token", async function () {
-      const { contract, buyer1, price } = await loadFixture(eventCreatedFixture);
+      const { contract, buyer1, price } = await loadFixture(
+        eventCreatedFixture,
+      );
       await contract.connect(buyer1).buyTicket(0, 0, { value: price });
       const ev = await contract.getEventOfToken(1);
       expect(ev.metadataURI).to.equal(METADATA);
     });
 
     it("getSectionOfToken returns the section the ticket belongs to", async function () {
-      const { contract, buyer1, sections } = await loadFixture(multiSectionFixture);
-      await contract.connect(buyer1).buyTicket(0, 1, { value: sections[1].priceWei });
+      const { contract, buyer1, sections } = await loadFixture(
+        multiSectionFixture,
+      );
+      await contract
+        .connect(buyer1)
+        .buyTicket(0, 1, { value: sections[1].priceWei });
       const sec = await contract.getSectionOfToken(1);
       expect(sec.priceWei).to.equal(sections[1].priceWei);
     });
 
     it("getActiveListings reflects additions/removals", async function () {
-      const { contract, buyer1, price } = await loadFixture(eventCreatedFixture);
+      const { contract, buyer1, price } = await loadFixture(
+        eventCreatedFixture,
+      );
       await contract.connect(buyer1).buyTicket(0, 0, { value: price });
       await contract.connect(buyer1).buyTicket(0, 0, { value: price });
-      await contract.connect(buyer1).listForResale(1, ethers.parseEther("0.1"), 0);
-      await contract.connect(buyer1).listForResale(2, ethers.parseEther("0.2"), 0);
+      await contract
+        .connect(buyer1)
+        .listForResale(1, ethers.parseEther("0.1"), 0);
+      await contract
+        .connect(buyer1)
+        .listForResale(2, ethers.parseEther("0.2"), 0);
       expect((await contract.getActiveListings()).length).to.equal(2);
       await contract.connect(buyer1).cancelResaleListing(1);
       expect((await contract.getActiveListings()).length).to.equal(1);

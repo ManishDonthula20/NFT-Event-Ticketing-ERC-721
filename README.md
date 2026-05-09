@@ -7,14 +7,14 @@ provides the full buy / resell / check-in experience.
 
 **Team — CS 218 · Team Minimalists**
 
-| Name | Roll Number |
-|------|------------|
-| S Varshith Reddy | 240001071|
-| Donthula Manish | 240001029 |
-| Sarath Chandra Jandhyala | 240041020 |
-| Gunala Kushal Goud | 240001033 |
-| Harshith Pasupuleti| 240003034 |
-| Srigiri Sairaj | 240001070 |
+| Name                     | Roll Number |
+| ------------------------ | ----------- |
+| S Varshith Reddy         | 240001071   |
+| Donthula Manish          | 240001029   |
+| Sarath Chandra Jandhyala | 240041020   |
+| Gunala Kushal Goud       | 240001033   |
+| Harshith Pasupuleti      | 240003034   |
+| Srigiri Sairaj           | 240001070   |
 
 ---
 
@@ -59,7 +59,7 @@ tool that invalidates the NFT on chain.
 - **Landing page**, search, category & price-range filters, ticket grouping
 - **IPFS uploads inside the app** — images + metadata pinned through Pinata
 - **Fallback image rendering** — deterministic gradient placeholder if the
-banner fails to load, so event cards never appear empty
+  banner fails to load, so event cards never appear empty
 
 ---
 
@@ -96,14 +96,14 @@ without paying SSTORE gas for every character.
 `contracts/EventTicketNFT.sol` — a single contract implementing:
 
 - **ERC-721** — one NFT per ticket, with `tokenURI` derived from the event's
-metadata CID plus the tokenId (`<metadataURI>/<tokenId>.json`)
+  metadata CID plus the tokenId (`<metadataURI>/<tokenId>.json`)
 - **ERC-2981** — on-chain royalty metadata; royalty is split automatically
-at resale settlement (not left to marketplace goodwill)
-- `**ReentrancyGuard`** on every external payable path
+  at resale settlement (not left to marketplace goodwill)
+- `**ReentrancyGuard`\*\* on every external payable path
 - **Checks-effects-interactions** throughout; counters are updated before
-any ETH leaves the contract
+  any ETH leaves the contract
 - **Section-based supply** — each event has 1–20 sections, each with its
-own price/supply; aggregate counters are maintained on the parent event
+  own price/supply; aggregate counters are maintained on the parent event
 - **Anti-scalping**
   - Per-event `maxPerBuyer` cap (hard-bounded by `GLOBAL_MAX_PER_BUYER = 10`)
   - Counter-cheating-proof: buyer quota is enforced across sections
@@ -111,18 +111,18 @@ own price/supply; aggregate counters are maintained on the parent event
   - Event date must be ≥ 24 h in the future
   - Royalty capped at `MAX_ROYALTY_BPS = 5_000` (50 %)
   - Royalty is **locked** once the first ticket sells (can't rewrite terms
-  on existing holders)
+    on existing holders)
 - **Marketplace**
   - Listings can optionally expire; expiry must be before the event date
   - Cancel-own-listing, buy-own-listing protection
   - O(1) active-listings enumeration for cheap frontend reads
 - **Organiser admin**
   - `updateEvent` for editable fields (metadata URI, date, maxPerBuyer,
-  royalty while allowed)
+    royalty while allowed)
   - `addTicketsToSection` to extend supply (not reduce it)
   - `cancelEvent` blocks further sales and resales
   - `invalidateTicket` (check-in): only organiser or contract owner,
-  silently cancels any active resale listing on the same token
+    silently cancels any active resale listing on the same token
 
 ### Public API summary
 
@@ -168,7 +168,6 @@ document; only the CID is on chain.
 
 ### What stays on chain
 
-
 | Field                                           | Why it stays                                        |
 | ----------------------------------------------- | --------------------------------------------------- |
 | `metadataURI`                                   | Anchors the metadata document (required, non-empty) |
@@ -181,9 +180,7 @@ document; only the CID is on chain.
 | `cancelled`                                     | Blocks further sales/resales                        |
 | Section `priceWei`, `maxTickets`, `ticketsSold` | All used by `_buy`                                  |
 
-
 ### What moved off-chain
-
 
 | Field               | Now lives in                         |
 | ------------------- | ------------------------------------ |
@@ -192,7 +189,6 @@ document; only the CID is on chain.
 | `event.category`    | `metadata.category`                  |
 | `event.image`       | `metadata.image` (own `ipfs://` CID) |
 | `section.name`      | `metadata.sections[i].name`          |
-
 
 ### IPFS JSON schema
 
@@ -206,10 +202,7 @@ document; only the CID is on chain.
     { "trait_type": "Category", "value": "Music" },
     { "trait_type": "Sections", "value": 2 }
   ],
-  "sections": [
-    { "name": "Front Row" },
-    { "name": "Standing" }
-  ]
+  "sections": [{ "name": "Front Row" }, { "name": "Standing" }]
 }
 ```
 
@@ -217,7 +210,7 @@ document; only the CID is on chain.
 
 Typical `createEvent` for an event with a 40-char name, 200-char
 description, 10-char category, and 2 sections with ~~10-char labels
-saves **~~200–350 k gas** vs. the original on-chain-strings design.
+saves \*\*~~200–350 k gas\*\* vs. the original on-chain-strings design.
 Integrity is preserved because the CID is the hash of the JSON — the
 document cannot change without invalidating the CID already on chain.
 
@@ -227,46 +220,45 @@ document cannot change without invalidating the CID already on chain.
 
 - **React 19 + Vite 8**, a single SPA with React Router
 - **Hand-rolled design system** in `src/index.css` — editorial serif
-headings, neutral surface palette, consistent spacing & components
+  headings, neutral surface palette, consistent spacing & components
 - **BookYourShow brand** — ticket+play gradient favicon used as both
-browser icon and in-app navbar mark (vector, renders crisply at any
-size)
+  browser icon and in-app navbar mark (vector, renders crisply at any
+  size)
 - **Landing page** with app description and navigation
 - **Events listing, Marketplace, My Tickets** all support
   - Full-text search
   - Category filter and price-range filter
   - **Grouping** by event + tier (shows VIP / Regular / Economy
-  breakdowns with aggregated counts and prices)
+    breakdowns with aggregated counts and prices)
 - **IPFS integration inside the app**
   - Pinata (JWT) is preferred;falls back to a local Kubo daemon on
-  port 5001 if configured
+    port 5001 if configured
   - `CreateEvent` uploads image→uploads metadata JSON → stores only
-  the resulting CID on chain
+    the resulting CID on chain
   - `EditEvent` re-pins a new JSON(carrying forward image + section
-  labels) and updates just the URI
+    labels) and updates just the URI
 - **Pinata-aware gateway ordering** (`src/utils/ipfs.js`)
   - If a Pinata JWT is set, the app fetches from Pinata's gateway
-  **first** (dedicated subdomain if provided, otherwise shared
-  `gateway.pinata.cloud`)
+    **first** (dedicated subdomain if provided, otherwise shared
+    `gateway.pinata.cloud`)
   - Local Kubo gateways are **never** tried when Pinata is the pinning
-  backend — that node doesn't have the CIDs and probing it just
-  stalls the UI
+    backend — that node doesn't have the CIDs and probing it just
+    stalls the UI
   - Multiple public gateways are used as eventual-consistency fallbacks
 - **Fallback banners** — `EventCard` / `EventPoster` render a
-deterministic gradient placeholder based on event name & category when
-no image is available, so cards never look empty
+  deterministic gradient placeholder based on event name & category when
+  no image is available, so cards never look empty
 - **Metadata cache** — shared `Map` de-dupes fetches across components
-(all instances of the same event request one HTTP call)
+  (all instances of the same event request one HTTP call)
 - **Currency display** — ETH prices shown alongside live INR conversion
 - **Sensitive-data hygiene** — wallet addresses, private keys, and
-contract addresses are **never** rendered to the UI. The only ID that
-is surfaced is the user's own **Token ID** on their ticket card, with
-a copy button, because they need to show it at check-in.
+  contract addresses are **never** rendered to the UI. The only ID that
+  is surfaced is the user's own **Token ID** on their ticket card, with
+  a copy button, because they need to show it at check-in.
 
 ---
 
 ## Tech stack
-
 
 | Layer        | Choices                                                                              |
 | ------------ | ------------------------------------------------------------------------------------ |
@@ -276,7 +268,6 @@ a copy button, because they need to show it at check-in.
 | Wallet       | MetaMask (injected EIP-1193 provider)                                                |
 | Storage      | IPFS via Pinata (pinFileToIPFS / pinJSONToIPFS), public/dedicated gateways for reads |
 | Styling      | Plain CSS variables + small utility set (no CSS-in-JS)                               |
-
 
 ---
 
@@ -338,7 +329,7 @@ a copy button, because they need to show it at check-in.
 - **Node.js 18+** (project has been tested on Node 20/23)
 - **MetaMask** (or any EIP-1193 wallet) in the browser
 - **Pinata account** with a JWT for IPFS pinning (free tier is enough).
-Local Kubo is optional; see [IPFS / Pinata setup](#ipfs--pinata-setup).
+  Local Kubo is optional; see [IPFS / Pinata setup](#ipfs--pinata-setup).
 
 ---
 
@@ -397,11 +388,11 @@ VITE_PINATA_GATEWAY=
 The app supports two upload backends, chosen automatically:
 
 1. **Pinata (preferred)** — set `VITE_PINATA_JWT` in
-  `frontend/.env.local`. Uploads go to Pinata's cloud cluster, which
+   `frontend/.env.local`. Uploads go to Pinata's cloud cluster, which
    means the content is instantly available from Pinata's gateway. No
    local daemon required.
 2. **Local Kubo (optional)** — if no JWT is configured, uploads go to
-  `http://127.0.0.1:5001/api/v0/add` (configurable via
+   `http://127.0.0.1:5001/api/v0/add` (configurable via
    `VITE_IPFS_API`). Requires `ipfs daemon` to be running and CORS
    configured for the dev server origin:
 
@@ -438,10 +429,10 @@ The deploy script (`scripts/deploy.js`):
 
 1. Compiles and deploys `EventTicketNFT`
 2. Seeds 3 demo events (Music / Conference / Theatre) — each event's
-  metadata is inlined as a base64 **data: URI** so the banners render
+   metadata is inlined as a base64 **data: URI** so the banners render
    instantly without any IPFS round-trip on the local dev chain
 3. Writes `frontend/src/utils/contract.js` with the deployed address,
-  chain ID, network name, and the fresh ABI
+   chain ID, network name, and the fresh ABI
 
 Open the frontend at `http://localhost:5173`. Connect a MetaMask
 account, make sure MetaMask is on the correct network (the page will
@@ -452,14 +443,16 @@ prompt to switch if not), and you're ready.
 ## Deploying to Sepolia
 
 1. Fund the `PRIVATE_KEY` account with a bit of Sepolia ETH
-  (e.g. from a Sepolia faucet).
+   (e.g. from a Sepolia faucet).
 2. Make sure `.env` has `SEPOLIA_RPC_URL` and `PRIVATE_KEY`.
 3. Run:
-  ```bash
-   npm run deploy:sepolia
-  ```
+
+```bash
+ npm run deploy:sepolia
+```
+
 4. The script redeploys, seeds the same demo events, and rewrites the
-  frontend `contract.js` with the Sepolia address + `chainId: 11155111`.
+   frontend `contract.js` with the Sepolia address + `chainId: 11155111`.
 5. Restart `npm run dev` in the frontend so it picks up the new ABI.
 
 ---
@@ -475,67 +468,68 @@ The test suite (`test/EventTicketNFT.test.js`) covers:
 
 - Deployment / ERC-721 / ERC-2981 interface support
 - `createEvent` success paths + every revert branch (metadata required,
-date too early, royalty cap, no sections, zero-supply section, etc.)
+  date too early, royalty cap, no sections, zero-supply section, etc.)
 - Multi-section behaviour (cheapest-price aggregation, aggregate supply)
 - `buyTicket` / `buyMultipleTickets` — mints, payment flow, overpay
-refund, per-section sell-out, per-buyer cap across sections, event
-cancelled, event finished
+  refund, per-section sell-out, per-buyer cap across sections, event
+  cancelled, event finished
 - Resale listing + cancel + buyback (including 90/10 royalty split
-arithmetic against real balances)
+  arithmetic against real balances)
 - `updateEvent` (including royalty lock after first sale, empty-URI
-reject, non-organiser reject)
+  reject, non-organiser reject)
 - Organiser admin — `addTicketsToSection`, `cancelEvent`,
-`invalidateTicket` (also silently cancels any active listing)
+  `invalidateTicket` (also silently cancels any active listing)
 - View helpers — `getTicketsOfUser`, `ticketsBoughtBy`,
-`getActiveListings` addition/removal
+  `getActiveListings` addition/removal
 
 ---
 
 ## Organiser check-in flow
 
 1. On **My Tickets**, each ticket card shows its **Token ID** prominently
-  with a **Copy** button. The holder reads it out (or shows their phone)
+   with a **Copy** button. The holder reads it out (or shows their phone)
    at the gate.
 2. The organiser opens **Organise → Check-in tool**, types the token
-  ID, and submits.
+   ID, and submits.
 3. The app calls `invalidateTicket(tokenId)`. The contract:
-  - Verifies the caller is the event's organiser (or contract owner)
-  - Sets `ticketValid[tokenId] = false`
-  - Cancels any active resale listing on that ticket silently
-  - Emits `TicketInvalidated`
+
+- Verifies the caller is the event's organiser (or contract owner)
+- Sets `ticketValid[tokenId] = false`
+- Cancels any active resale listing on that ticket silently
+- Emits `TicketInvalidated`
+
 4. The ticket's card in the holder's wallet now shows a **Checked in**
-  badge and can no longer be relisted.
+   badge and can no longer be relisted.
 
 ---
 
 ## Security & privacy notes
 
 - **Content-addressed metadata** — IPFS CIDs are hashes of the content
-they point to. An attacker cannot substitute a different JSON
-document without producing a different CID, so the pointer stored on
-chain unambiguously identifies the exact bytes.
+  they point to. An attacker cannot substitute a different JSON
+  document without producing a different CID, so the pointer stored on
+  chain unambiguously identifies the exact bytes.
 - **No sensitive data in the UI** — wallet addresses, private keys,
-contract addresses, and internal IDs are not rendered anywhere the
-user can see them. The one exception is a holder's own **Token ID**,
-which is shown on their ticket card because they need it for
-check-in.
+  contract addresses, and internal IDs are not rendered anywhere the
+  user can see them. The one exception is a holder's own **Token ID**,
+  which is shown on their ticket card because they need it for
+  check-in.
 - **Reentrancy** — every external payable function (`buyTicket`,
-`buyMultipleTickets`, `buyResaleTicket`) carries `nonReentrant`, and
-internal logic follows checks-effects-interactions (counters are
-incremented **before** `call{value: …}`).
+  `buyMultipleTickets`, `buyResaleTicket`) carries `nonReentrant`, and
+  internal logic follows checks-effects-interactions (counters are
+  incremented **before** `call{value: …}`).
 - **Royalty lock** — once any ticket has been sold, `royaltyBps` is
-frozen. Organisers cannot rewrite royalty terms on existing holders
-mid-event.
+  frozen. Organisers cannot rewrite royalty terms on existing holders
+  mid-event.
 - **Payment failures surface** — ETH transfers are checked; failed
-organiser / seller / royalty / refund transfers revert the whole tx
-(no stuck funds, no partial state).
+  organiser / seller / royalty / refund transfers revert the whole tx
+  (no stuck funds, no partial state).
 
 ---
 
 ## Scripts reference
 
 Root `package.json`:
-
 
 | Command                  | What it does                                         |
 | ------------------------ | ---------------------------------------------------- |
@@ -545,9 +539,7 @@ Root `package.json`:
 | `npm run deploy:sepolia` | Deploy + seed demo events on Sepolia                 |
 | `npm run node`           | Start a local Hardhat dev chain                      |
 
-
 `frontend/package.json`:
-
 
 | Command           | What it does                                     |
 | ----------------- | ------------------------------------------------ |
@@ -555,7 +547,6 @@ Root `package.json`:
 | `npm run build`   | Production build into `frontend/dist`            |
 | `npm run preview` | Serve the built app locally                      |
 | `npm run lint`    | Run ESLint on the frontend                       |
-
 
 ---
 
