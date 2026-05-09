@@ -47,7 +47,7 @@ export default function EditEvent({ contract, account, isConnected, connect, toa
         setEvent(null);
         return;
       }
-      // The current on-chain record only has the metadataURI; pull the JSON
+      // The current on-chain record only has the metadataURI. Pull the JSON
       // so we can prefill the form with the last-pinned name/description/etc.
       const existingMeta = await getMetadata(ev.metadataURI).catch(() => null);
       setEvent(ev);
@@ -136,7 +136,7 @@ export default function EditEvent({ contract, account, isConnected, connect, toa
       return toast.danger("Max per buyer must be ≥ 1.");
 
     // Royalty is locked on-chain once any ticket is sold. Re-submit the
-    // original BigInt so the contract's "if changed" branch never fires.
+    // original BigInt so the contracts "if changed" branch never fires.
     let royaltyBps;
     if (royaltyLocked) {
       royaltyBps = event.royaltyBps;
@@ -150,7 +150,7 @@ export default function EditEvent({ contract, account, isConnected, connect, toa
 
       // Pin a new metadata document reflecting the edits. We carry forward
       // the original image and the per-section labels unchanged (the form
-      // here only edits top-level fields; section labels are locked after
+      // here only edits top-level fields. Section labels are locked after
       // creation, matching the on-chain guarantee that section prices /
       // supplies are immutable aside from supply extension).
       toast.pending("Pinning updated metadata to IPFS…");
