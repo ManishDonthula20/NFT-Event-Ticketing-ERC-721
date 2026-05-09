@@ -1,11 +1,15 @@
 # BookYourShow — NFT Event Ticketing (ERC-721)
 
+> **CS 218 — Programmable & Interoperable Blockchain**
+> **Project 7 — NFT Event Ticketing (ERC-721)**
+> Submission deadline: **10 May 2026, 11:59 PM**
+
 An end-to-end decentralised event-ticketing platform. Tickets are
 ERC-721 NFTs issued by a single Solidity contract; event metadata lives
 off-chain on IPFS (Pinata) to keep gas costs low; a React frontend
 provides the full buy / resell / check-in experience.
 
-**Team — CS 218 · Team Minimalists**
+**Team — Team Minimalists**
 
 | Name                     | Roll Number |
 | ------------------------ | ----------- |
@@ -36,6 +40,8 @@ provides the full buy / resell / check-in experience.
 14. [Testing](#testing)
 15. [Organiser check-in flow](#organiser-check-in-flow)
 16. [Security & privacy notes](#security--privacy-notes)
+17. [Known issues & limitations](#known-issues--limitations)
+18. [Scripts reference](#scripts-reference)
 
 ---
 
@@ -99,7 +105,7 @@ without paying SSTORE gas for every character.
   metadata CID plus the tokenId (`<metadataURI>/<tokenId>.json`)
 - **ERC-2981** — on-chain royalty metadata; royalty is split automatically
   at resale settlement (not left to marketplace goodwill)
-- `**ReentrancyGuard`\*\* on every external payable path
+- **`ReentrancyGuard`** on every external payable path
 - **Checks-effects-interactions** throughout; counters are updated before
   any ETH leaves the contract
 - **Section-based supply** — each event has 1–20 sections, each with its
@@ -107,7 +113,15 @@ without paying SSTORE gas for every character.
 - **Anti-scalping**
   - Per-event `maxPerBuyer` cap (hard-bounded by `GLOBAL_MAX_PER_BUYER = 10`)
   - Counter-cheating-proof: buyer quota is enforced across sections
+  - **Resale price cap** — `MAX_RESALE_PRICE_MULTIPLIER = 2`. A ticket
+    can never be re-listed for more than **2× its original primary-sale
+    price**. Enforced on-chain in `listForResale` (revert
+    `"Resale price exceeds 2x original"`) and validated client-side in
+    `TicketCard.jsx` before the wallet round-trip.
 - **Creation safety rails**
+  - **`createEvent` is `onlyOwner`** — the contract deployer is the
+    organiser, so event creation is restricted to that single address
+    (OpenZeppelin `Ownable`)
   - Event date must be ≥ 24 h in the future
   - Royalty capped at `MAX_ROYALTY_BPS = 5_000` (50 %)
   - Royalty is **locked** once the first ticket sells (can't rewrite terms
@@ -206,13 +220,36 @@ document; only the CID is on chain.
 }
 ```
 
-### Result
+### Before / after — measured with `hardhat-gas-reporter`
 
-Typical `createEvent` for an event with a 40-char name, 200-char
-description, 10-char category, and 2 sections with ~~10-char labels
-saves \*\*~~200–350 k gas\*\* vs. the original on-chain-strings design.
-Integrity is preserved because the CID is the hash of the JSON — the
-document cannot change without invalidating the CID already on chain.
+The same functional test suite was run against the **on-chain-strings**
+schema and again against the current **IPFS-CID** schema with identical
+compiler settings (`solc 0.8.28`, `optimizer.runs = 200`, `viaIR = true`).
+
+| `createEvent` | Before (on-chain strings) | After (IPFS pointer) | Saved | Δ |
+| ------------- | ------------------------: | -------------------: | ----: | ----: |
+| Min           |                   313,285 |              240,951 | **72,334**  | **−23.1 %** |
+| Max           |                   480,147 |              357,606 | **122,541** | **−25.5 %** |
+| **Avg**       |               **389,440** |          **296,739** | **92,701**  | **−23.8 %** |
+
+| `updateEvent` | Before    | After     | Saved      | Δ        |
+| ------------- | --------: | --------: | ---------: | -------: |
+| Min           |    49,682 |    39,230 |     10,452 | −21.0 %  |
+| Max           |    54,789 |    47,185 |      7,604 | −13.9 %  |
+| **Avg**       | **53,087**| **44,533**| **8,554**  | **−16.1 %** |
+
+**Why it works.** Every fresh storage slot costs **20,000 gas**
+(`SSTORE` cold). A 200-character description previously needed 1
+length-slot + 7 data-slots = **~160,000 gas** of cold SSTORE on every
+event creation. We removed those slots entirely and added back a single
+~60-char IPFS CID (~3 slots). Integrity is preserved because the CID is
+the keccak-style content hash of the JSON — the document cannot change
+without invalidating the CID already on chain.
+
+Raw tool output is in [`reports/gas-report.txt`](./reports/gas-report.txt);
+the deeper write-up (slot accounting + the seven other smaller
+optimisations applied on top) is in
+[`reports/project-evaluation.md`](./reports/project-evaluation.md#§d-gas-optimisation--3-marks-deep-dive).
 
 ---
 
@@ -280,7 +317,7 @@ document cannot change without invalidating the CID already on chain.
 ├── scripts/
 │   └── deploy.js                     # deploys + seeds demo events + writes ABI
 ├── test/
-│   └── EventTicketNFT.test.js        # 61 unit tests, fixture-based
+│   └── EventTicketNFT.test.js        # 68 unit tests, fixture-based
 ├── hardhat.config.ts                 # solc + Sepolia config
 ├── package.json                      # hardhat tooling
 ├── frontend/
@@ -460,8 +497,9 @@ prompt to switch if not), and you're ready.
 ## Testing
 
 ```bash
-npx hardhat test           # 61 passing
+npx hardhat test                   # 68 passing, 0 failing  (~3 s)
 REPORT_GAS=true npx hardhat test   # also prints gas usage per method
+npx hardhat coverage               # solidity-coverage — 99.10% lines, 100% functions
 ```
 
 The test suite (`test/EventTicketNFT.test.js`) covers:
@@ -469,18 +507,32 @@ The test suite (`test/EventTicketNFT.test.js`) covers:
 - Deployment / ERC-721 / ERC-2981 interface support
 - `createEvent` success paths + every revert branch (metadata required,
   date too early, royalty cap, no sections, zero-supply section, etc.)
+  + **non-owner reject** (asserting OZ `OwnableUnauthorizedAccount`)
 - Multi-section behaviour (cheapest-price aggregation, aggregate supply)
 - `buyTicket` / `buyMultipleTickets` — mints, payment flow, overpay
   refund, per-section sell-out, per-buyer cap across sections, event
   cancelled, event finished
-- Resale listing + cancel + buyback (including 90/10 royalty split
-  arithmetic against real balances)
+- Resale listing + cancel + buyback, including
+  - 90/10 royalty split asserted against real balance deltas
+  - **Cancelled listing cannot be purchased** (revert `"Listing not active"`)
+  - **Auto-cancelled listing after `invalidateTicket` cannot be purchased**
+  - **Resale price > 2× original primary price reverts**
 - `updateEvent` (including royalty lock after first sale, empty-URI
   reject, non-organiser reject)
 - Organiser admin — `addTicketsToSection`, `cancelEvent`,
   `invalidateTicket` (also silently cancels any active listing)
 - View helpers — `getTicketsOfUser`, `ticketsBoughtBy`,
-  `getActiveListings` addition/removal
+  `getActiveListings` addition/removal,
+  `maxResalePriceFor`, `MAX_RESALE_PRICE_MULTIPLIER`
+
+Pre-captured artefacts the grader can inspect without re-running anything:
+
+- [`reports/coverage-report.txt`](./reports/coverage-report.txt) — full
+  raw `solidity-coverage` output (every passing test + Istanbul summary)
+- [`reports/gas-report.txt`](./reports/gas-report.txt) — full
+  `hardhat-gas-reporter` table
+- [`reports/project-evaluation.md`](./reports/project-evaluation.md) —
+  rubric-by-rubric writeup
 
 ---
 
@@ -524,6 +576,59 @@ The test suite (`test/EventTicketNFT.test.js`) covers:
 - **Payment failures surface** — ETH transfers are checked; failed
   organiser / seller / royalty / refund transfers revert the whole tx
   (no stuck funds, no partial state).
+
+---
+
+## Known issues & limitations
+
+These are deliberate scope cuts and known trade-offs. They are not
+blockers for the rubric but worth documenting up front.
+
+- **Single-organiser by design.** `createEvent` is `onlyOwner`, so the
+  contract deployer is the *only* address that can list events. This
+  matches the rubric's "Only organiser deploys and creates events" but
+  precludes a multi-tenant Eventbrite-style deployment. To support
+  several organisers on one contract, replace `Ownable.onlyOwner` with
+  a per-address allow-list (e.g. `AccessControl` with an
+  `ORGANISER_ROLE`).
+- **Cancellation does not refund.** `cancelEvent` blocks further
+  primary sales and resales, but it does **not** refund holders who
+  already bought. Primary-sale ETH is forwarded to the organiser
+  immediately at purchase time, so the contract holds no funds to
+  refund from. A future version could escrow primary-sale revenue
+  until `event.date` and add a `claimRefund(tokenId)` for cancelled
+  events.
+- **No `IERC721Enumerable`.** `getTicketsOfUser(address)` is `O(n)` in
+  the global token count — fine for views, never used on-chain. Adding
+  `IERC721Enumerable` would speed enumeration but make every mint
+  significantly more expensive (extra storage writes per token), which
+  would defeat the §D gas-optimisation work.
+- **Frontend uses `eth_call` polling, not WebSocket subscriptions.**
+  The UI cache-busts via a `refreshKey` that's incremented after each
+  successful write. We didn't wire `contract.on(...)` event
+  subscriptions because they require a WebSocket provider (Alchemy /
+  Infura key) in production; polling is simpler and "good enough" for
+  a single-user DApp where every state change is triggered by the user.
+- **IPFS pin durability is the organiser's responsibility.** If a
+  Pinata pin lapses, the metadata document may become unreachable.
+  The contract still works (the on-chain CID is unchanged, and the
+  ticket is still a valid NFT), but display data degrades to the
+  fallback gradient placeholder. Mitigation: pin to multiple
+  providers (Pinata + Web3.Storage + a personal Kubo node).
+- **Branch coverage is 70 %.** Line and function coverage are
+  comfortably above the 70 % rubric target (99.10 % / 100 %), but
+  branch coverage sits exactly at the threshold because of
+  short-circuit fall-throughs in compound `&&` `require` conditions.
+  Squeezing those last branches would add tests with diminishing
+  signal-to-noise (both halves of an `&&` being false simultaneously).
+- **Free-ticket bypass on the resale cap.** The 2× resale-price cap
+  is bypassed when the primary price is `0` (free ticket), because
+  `0 × 2 = 0` would otherwise make free tickets un-resellable. This
+  is intentional and documented in `MAX_RESALE_PRICE_MULTIPLIER`'s
+  NatSpec.
+- **Node 20+ recommended.** Hardhat 2 emits a warning on Node 23
+  ("not officially supported"), but every test passes on Node 20 and
+  Node 23. CI runs on Node 20.
 
 ---
 
