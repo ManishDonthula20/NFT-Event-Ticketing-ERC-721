@@ -26,9 +26,11 @@ export default function TicketCard({
 
   const expired = isPast(event.date);
   const isListed = listing?.active;
+
   // Section price tells the holder what they actually paid; fall back to the
   // event-level aggregate if section data failed to load for some reason.
   const paidPriceWei = section?.priceWei ?? event.priceWei;
+
   // Anti-scalping: chain rejects price > 2x original, so we mirror that
   // rule client-side for an instant error instead of a wallet round-trip.
   const resaleCapWei = maxResalePriceWei(paidPriceWei);

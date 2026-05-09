@@ -3,9 +3,9 @@ import { useEvents } from "../hooks/useEvents";
 import { isPast } from "../utils/helpers";
 
 /**
- * BookYourShow landing page — first impression for visitors.
+ *  BookYourShow landing page — the first impression for visitors.
  *
- * Gives the app its voice before we drop users into the catalog:
+ *  Gives the app its voice before we drop users into the catalog:
  *  - What the app is
  *  - What makes it different (on-chain tickets, tier pricing, royalties, resale)
  *  - Where to go next (events, marketplace, organise)
@@ -18,7 +18,7 @@ export default function Landing({ contract, refreshKey }) {
     {
       title: "Tier-based seating",
       body:
-        "Events can be split into multiple sections — VIP, Regular, Economy — each with its own price and supply. Buyers pick the tier they want.",
+        "Events can be split into multiple sections - VIP, Regular, Economy - each with its own price and supply. Buyers pick the tier they want.",
     },
     {
       title: "Resale with royalties",

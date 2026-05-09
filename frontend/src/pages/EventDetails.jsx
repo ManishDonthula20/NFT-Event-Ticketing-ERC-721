@@ -34,6 +34,7 @@ export default function EventDetails({ contract, account, isConnected, connect, 
     try {
       const ev = await contract.getEvent(eventId);
       if (!ev) return;
+      
       // Merge the event's IPFS metadata so the page can display name,
       // description, category, section labels etc. even though the contract
       // no longer stores them.
