@@ -414,7 +414,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
     }
 
     /**
-     * @notice Invalidates a ticket so it can no longer be resold or re-used
+     * @notice Checks in a ticket so it can no longer be resold or re-used 
      *         (intended for venue check-in). Callable by the event organiser
      *         or the contract owner (platform admin).
      * @param  tokenId The ticket token id.
@@ -770,12 +770,12 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981, ReentrancyGuard, Ownable 
         return _events[tokenToEvent[tokenId]];
     }
 
-    /// @notice Whether a ticket is still valid (not invalidated at venue).
+    /// @notice Returns a bool indicating whether a ticket is still valid (not invalidated at venue).
     function isTicketValid(uint256 tokenId) external view returns (bool) {
         return ticketValid[tokenId];
     }
 
-    /// @notice Number of tickets `user` has bought for `eventId`.
+    /// @notice Returns Number of tickets `user` has bought for `eventId`.
     function ticketsBoughtBy(address user, uint256 eventId)
         external
         view
