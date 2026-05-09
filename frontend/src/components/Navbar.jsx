@@ -29,12 +29,12 @@ export default function Navbar({
           </Link>
 
           <nav className="nav-links">
-            <NavLink to="/" end            className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Home</NavLink>
-            <NavLink to="/events"          className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Events</NavLink>
-            <NavLink to="/marketplace"     className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Resale</NavLink>
-            <NavLink to="/my-tickets"      className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>My Tickets</NavLink>
-            <NavLink to="/organise"        className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Organise</NavLink>
-            <NavLink to="/create"          className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Create event</NavLink>
+            <NavLink to="/" end           className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Home</NavLink>
+            <NavLink to="/events"         className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Events</NavLink>
+            <NavLink to="/marketplace"    className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Resale</NavLink>
+            <NavLink to="/my-tickets"     className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>My Tickets</NavLink>
+            <NavLink to="/organise"       className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Organise</NavLink>
+            <NavLink to="/create"         className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Create event</NavLink>
           </nav>
 
           <div className="flex items-center gap-12">
@@ -71,12 +71,12 @@ export default function Navbar({
 
       <div className="container">
         <div className="mobile-nav">
-          <NavLink to="/" end            className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Home</NavLink>
-          <NavLink to="/events"          className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Events</NavLink>
-          <NavLink to="/marketplace"     className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Resale</NavLink>
-          <NavLink to="/my-tickets"      className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>My Tickets</NavLink>
-          <NavLink to="/organise"        className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Organise</NavLink>
-          <NavLink to="/create"          className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Create</NavLink>
+          <NavLink to="/" end           className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Home</NavLink>
+          <NavLink to="/events"         className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Events</NavLink>
+          <NavLink to="/marketplace"    className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Resale</NavLink>
+          <NavLink to="/my-tickets"     className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>My Tickets</NavLink>
+          <NavLink to="/organise"       className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Organise</NavLink>
+          <NavLink to="/create"         className={({isActive}) => `nav-link ${isActive ? "active" : ""}`}>Create</NavLink>
         </div>
       </div>
     </>

@@ -10,7 +10,7 @@ const PENDING_MAX_MS = 120_000; // 2 minutes
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
-  const timersRef = useRef(new Map()); // id -> timeoutHandle
+  const timersRef = useRef(new Map()); // id ->timeoutHandle
 
   const remove = useCallback((id) => {
     const h = timersRef.current.get(id);
@@ -46,7 +46,7 @@ export function ToastProvider({ children }) {
 
   const push = useCallback(
     (message, type, timeout) => {
-      // Any new resolved toast (success / danger / info) replaces pending ones.
+      // Any new resolved toast (success/danger/info) replaces pending ones.
       if (type !== "pending") clearPending();
 
       const id = nextId++;
