@@ -21,7 +21,7 @@ npm run gas-report
 |        A | Smart Contract Correctness |      9 |          9 | `contracts/EventTicketNFT.sol`, `test/EventTicketNFT.test.js` |
 |        B | Security                   |      4 |          4 | `nonReentrant`, CEI ordering, `require` validation |
 |        C | OpenZeppelin Usage         |      1 |          1 | `ERC721URIStorage`, `IERC2981`, `Ownable`, `ReentrancyGuard` |
-|    **D** | **Gas Optimisation**       |  **3** |      **3** | `reports/gas-report.txt` + §D below |
+|    **D** | **Gas Optimisation**       |  **3** |      **3** | `reports/gas-report.pdf` + §D below |
 |        E | Testing                    |      4 |          4 | 61 passing tests, >70 % on every coverage axis |
 |        F | DApp Frontend              |      3 |          3 | React + ethers v6 + MetaMask, `buyTicket()` wired with toasts |
 |        G | Documentation & Code       |      1 |          1 | `README.md` + full NatSpec |
@@ -48,7 +48,7 @@ The same functional test suite was executed **before** and **after** the change,
 > **TL;DR — ~92,000 gas saved per `createEvent` call (−23.8 % average).**
 > Deployment bytecode also shrank by ~351 k gas (−9 %) as a side-effect, because the contract no longer has to carry the string-handling code paths for the deleted fields.
 
-Tooling: `hardhat-gas-reporter` v1.0.10, Solidity 0.8.28, `optimizer.runs = 200`, `viaIR = true`. The full `hardhat-gas-reporter` table is in [`gas-report.txt`](./gas-report.txt).
+Tooling: `hardhat-gas-reporter` v1.0.10, Solidity 0.8.28, `optimizer.runs = 200`, `viaIR = true`. The full `hardhat-gas-reporter` table is in [`gas-report.pdf`](./gas-report.pdf).
 
 ---
 
@@ -263,7 +263,6 @@ These changes do not move the headline number much individually but, together, k
 |  uint96    |  uint32     |  address  |   bool    |  1 byte  |
 |  12 bytes  |   4 bytes   | 20 bytes  |  1 byte   |          |   --> 32 bytes total -> ONE slot
 ```
-
 Solidity packs sequential ≤32-byte fields into a single slot when their declared widths line up. We deliberately ordered the struct so these five small fields share one slot. **Saves 1 cold SSTORE (~20 k gas) per `createEvent`** versus a naive ordering.
 
 ### 2. Batched Counter Updates Inside `_buy`
@@ -317,10 +316,11 @@ solidity: {
 ```bash
 npm install
 npm run gas-report                 # prints the table to stdout
-npm run gas-report:file            # also writes reports/gas-report.txt
+npm run gas-report:file            # also writes reports/gas-report.txt Generates raw .txt output, we have provided it as .pdf for grading
 ```
 
 Raw tool output: [`gas-report.txt`](./gas-report.txt). The pre-optimisation BEFORE numbers were captured from the same suite run against the legacy struct layout and are preserved for delta verification in the team's project-history archive.
+
 
 ---
 
@@ -376,7 +376,7 @@ contract EventTicketNFT is ERC721URIStorage, IERC2981,
 - **Coverage** — `solidity-coverage` v0.8.17:
   - **Lines: 99.10 %**, **Functions: 100 %**, **Statements: 97.21 %**, **Branches: 72.50 %**
   - All four axes are above the 70 % rubric threshold.
-- Full passing-test list and coverage table: [`coverage-report.txt`](./coverage-report.txt).
+- Full passing-test list and coverage table: [`coverage-report.pdf`](./coverage-report.pdf).
 
 ---
 
@@ -447,12 +447,14 @@ cd frontend && npm install && npm run dev
 | Solidity contract    | `contracts/EventTicketNFT.sol`             |
 | Tests (61 passing)   | `test/EventTicketNFT.test.js`              |
 | Deploy script        | `scripts/deploy.js`                        |
-| Hardhat config       | `hardhat.config.js`                        |
+| Hardhat config       | `hardhat.config.ts`                        |
 | Frontend root        | `frontend/`                                |
 | Buy-ticket UI flow   | `frontend/src/pages/EventDetails.jsx`      |
 | Resale UI flow       | `frontend/src/pages/Marketplace.jsx`       |
 | Wallet hook          | `frontend/src/hooks/useWallet.js`          |
+| Gas report           | `reports/gas-report.pdf`                   |
 | Gas report (raw)     | `reports/gas-report.txt`                   |
-| Coverage report      | `reports/coverage-report.txt`              |
+| Coverage report      | `reports/coverage-report.pdf`              |
+| Coverage report (raw)| `reports/coverage-report.txt`              |
 | This evaluation      | `reports/project-evaluation.md`            |
 | README & setup       | `README.md`                                |
