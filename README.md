@@ -246,7 +246,7 @@ event creation. We removed those slots entirely and added back a single
 the keccak-style content hash of the JSON — the document cannot change
 without invalidating the CID already on chain.
 
-Raw tool output is in [`reports/gas-report.txt`](./reports/gas-report.txt);
+Raw tool output is in [`reports/gas-report.pdf`](./reports/gas-report.pdf);
 the deeper write-up (slot accounting + the seven other smaller
 optimisations applied on top) is in
 [`reports/project-evaluation.md`](./reports/project-evaluation.md#§d-gas-optimisation--3-marks-deep-dive).
@@ -527,9 +527,9 @@ The test suite (`test/EventTicketNFT.test.js`) covers:
 
 Pre-captured artefacts the grader can inspect without re-running anything:
 
-- [`reports/coverage-report.txt`](./reports/coverage-report.txt) — full
+- [`reports/coverage-report.pdf`](./reports/coverage-report.pdf) — full
   raw `solidity-coverage` output (every passing test + Istanbul summary)
-- [`reports/gas-report.txt`](./reports/gas-report.txt) — full
+- [`reports/gas-report.pdf`](./reports/gas-report.pdf) — full
   `hardhat-gas-reporter` table
 - [`reports/project-evaluation.md`](./reports/project-evaluation.md) —
   rubric-by-rubric writeup

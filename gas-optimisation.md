@@ -29,9 +29,9 @@ Both sets of numbers were produced by running the **same test suite**
 [`docs/README.md`](./README.md#how-to-regenerate-the-before-gas-numbers)
 for the exact commands.
 
-Raw output:
+Output:
 - Before — [`reports/gas-report-before.txt`](./reports/gas-report-before.txt)
-- After  — [`reports/gas-report.txt`](./reports/gas-report.txt)
+- After  — [`reports/gas-report.pdf`](./reports/gas-report.pdf)
 
 ### `createEvent` (the headline number)
 
