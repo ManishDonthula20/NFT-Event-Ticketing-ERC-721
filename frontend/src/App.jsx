@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import { ToastProvider, useToast } from "./components/Toast";
 import { useWallet } from "./hooks/useWallet";
@@ -14,6 +14,7 @@ import Marketplace from "./pages/Marketplace";
 import CreateEvent from "./pages/CreateEvent";
 import Organiser from "./pages/Organiser";
 import EditEvent from "./pages/EditEvent";
+import NotFound from "./pages/NotFound";
 
 function AppInner() {
   const wallet = useWallet();
@@ -118,13 +119,7 @@ function AppInner() {
                   bump={bump}
                 />
               } />
-              <Route path="*" element={
-                <div className="empty">
-                  <h3>Page not found</h3>
-                  <p>The path you requested doesn't exist.</p>
-                  <Link to="/" className="btn btn-primary">Back home</Link>
-                </div>
-              } />
+              <Route path="*" element={<NotFound />} />
             </Routes>
           </div>
         </main>
